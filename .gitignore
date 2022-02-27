@@ -1,0 +1,5 @@
+training_data/*
+test_outputs/*
+test_data/*
+model/*
+__pycache__/*
