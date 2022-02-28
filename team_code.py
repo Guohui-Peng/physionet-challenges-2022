@@ -67,8 +67,10 @@ def train_challenge_model(data_folder, model_folder, verbose):
             current_labels[j] = 1
         labels.append(current_labels)
 
+    print(labels)
     features = np.vstack(features)
     labels = np.vstack(labels)
+    print(labels)
 
     # Train the model.
     if verbose >= 1:
