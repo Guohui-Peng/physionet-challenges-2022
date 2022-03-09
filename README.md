@@ -112,3 +112,18 @@ Please see the [Challenge website](https://physionetchallenges.org/2022/) for mo
 * [Scoring code](https://github.com/physionetchallenges/evaluation-2022)
 * [Frequently asked questions (FAQ) for this year's Challenge](https://physionetchallenges.org/2022/faq/) 
 * [Frequently asked questions (FAQ) about the Challenges in general](https://physionetchallenges.org/faq/) 
+
+## Data analysis
+There were 942 patient data.
+
+The recorded data for each patient in the dataset were counted.
+
+| Number of recordings | Number of patients |
+|  ----  | ----:  |
+| 1 | 62 |
+| 2 | 156 |
+| 3 | 123 |
+| 4 | 588 |
+| 5 | 10 |
+| 6 | 3 |
+| Total | 942 |
