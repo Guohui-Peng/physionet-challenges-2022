@@ -68,22 +68,22 @@ If you have trouble running your code, then please try the follow steps to run t
 
 3. Download or clone this repository in your terminal.
 
-        user@computer:~/example$ git clone https://github.com/physionetchallenges/python-classifier-2022.git
+        user@computer:~/example$ git clone https://github.com/Guohui-Peng/physionet-challenges-2022.git
 
 4. Build a Docker image and run the example code in your terminal.
 
         user@computer:~/example$ ls
-        model  python-classifier-2022  test_data  test_outputs  training_data
+        model  physionet-challenges-2022  test_data  test_outputs  training_data
 
-        user@computer:~/example$ cd python-classifier-2022/
+        user@computer:~/example$ cd physionet-challenges-2022/
 
-        user@computer:~/example/python-classifier-2022$ docker build -t image .
+        user@computer:~/example/physionet-challenges-2022$ docker build -t image .
 
         Sending build context to Docker daemon  [...]kB
         [...]
         Successfully tagged image:latest
 
-        user@computer:~/example/python-classifier-2022$ docker run --gpus all -it -v ~/example/model:/physionet/model -v ~/example/test_data:/physionet/test_data -v ~/example/test_outputs:/physionet/test_outputs -v ~/example/training_data:/physionet/training_data image bash
+        user@computer:~/example/physionet-challenges-2022$ docker run --gpus all -it -v ~/example/model:/physionet/model -v ~/example/test_data:/physionet/test_data -v ~/example/test_outputs:/physionet/test_outputs -v ~/example/training_data:/physionet/training_data image bash
 
         root@[...]:/physionet# ls
             Dockerfile             README.md         test_outputs
@@ -128,10 +128,9 @@ The recorded data for each patient in the dataset were counted.
 | 6 | 3 |
 | Total | 942 |
 
-Recording lengths:
-20608~258048
+Recording lengths: 20608~258048
 
-Recording classification qty:
-Unkown: 68
-Absent: 695
-Present: 179
+Recording classification qty:  
+Unkown: 68  
+Absent: 695  
+Present: 179  
