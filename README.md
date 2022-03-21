@@ -127,3 +127,11 @@ The recorded data for each patient in the dataset were counted.
 | 5 | 10 |
 | 6 | 3 |
 | Total | 942 |
+
+Recording lengths:
+20608~258048
+
+Recording classification qty:
+Unkown: 68
+Absent: 695
+Present: 179
