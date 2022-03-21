@@ -9,9 +9,9 @@ COPY ./ /physionet
 WORKDIR /physionet
 
 ## Install your dependencies here using apt install, etc.
-RUN apt update &&
-    apt install -y git &&
-    apt-get install -y libsndfile1 &&
+RUN apt update && \
+    apt install -y git && \
+    apt-get install -y libsndfile1 && \
     /usr/bin/python3 -m pip install --upgrade pip
 
 ## Include the following line if you have a requirements.txt file.
