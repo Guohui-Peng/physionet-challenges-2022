@@ -83,7 +83,7 @@ If you have trouble running your code, then please try the follow steps to run t
         [...]
         Successfully tagged image:latest
 
-        user@computer:~/example/python-classifier-2022$ docker run -it -v ~/example/model:/physionet/model -v ~/example/test_data:/physionet/test_data -v ~/example/test_outputs:/physionet/test_outputs -v ~/example/training_data:/physionet/training_data image bash
+        user@computer:~/example/python-classifier-2022$ docker run --gpus all -it -v ~/example/model:/physionet/model -v ~/example/test_data:/physionet/test_data -v ~/example/test_outputs:/physionet/test_outputs -v ~/example/training_data:/physionet/training_data image bash
 
         root@[...]:/physionet# ls
             Dockerfile             README.md         test_outputs
