@@ -3,3 +3,4 @@ test_outputs/*
 test_data/*
 model/*
 __pycache__/*
+logs/*

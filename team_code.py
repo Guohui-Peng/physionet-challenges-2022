@@ -22,6 +22,8 @@ from sklearn.model_selection import train_test_split
 import pandas as pd
 import matplotlib.pyplot as plt
 import time, datetime
+import warnings
+warnings.filterwarnings("ignore")
 
 ################################################################################
 #
@@ -36,64 +38,65 @@ def train_challenge_model(data_folder, model_folder, verbose):
         print('Finding data files...')
 
 
-    # Find the patient data files.
-    patient_files = find_patient_files(data_folder)
-    num_patient_files = len(patient_files)
+    # # Find the patient data files.
+    # patient_files = find_patient_files(data_folder)
+    # num_patient_files = len(patient_files)
 
-    if num_patient_files==0:
-        raise Exception('No data was provided.')
+    # if num_patient_files==0:
+    #     raise Exception('No data was provided.')
 
-    # Create a folder for the model if it does not already exist.
-    os.makedirs(model_folder, exist_ok=True)
+    # # Create a folder for the model if it does not already exist.
+    # os.makedirs(model_folder, exist_ok=True)
 
-    classes = ['Present', 'Unknown', 'Absent']
-    num_classes = len(classes)
+    # classes = ['Present', 'Unknown', 'Absent']
+    # num_classes = len(classes)
 
-    # Extract the features and labels.
-    if verbose >= 1:
-        print('Extracting features and labels from the Challenge data...')
+    # # Extract the features and labels.
+    # if verbose >= 1:
+    #     print('Extracting features and labels from the Challenge data...')
 
-    features = list()
-    labels = list()
+    # features = list()
+    # labels = list()
 
-    for i in range(num_patient_files):
-        if verbose >= 2:
-            print('    {}/{}...'.format(i+1, num_patient_files))
+    # for i in range(num_patient_files):
+    #     if verbose >= 2:
+    #         print('    {}/{}...'.format(i+1, num_patient_files))
 
-        # Load the current patient data and recordings.
-        current_patient_data = load_patient_data(patient_files[i])
-        current_recordings = load_recordings(data_folder, current_patient_data)
+    #     # Load the current patient data and recordings.
+    #     current_patient_data = load_patient_data(patient_files[i])
+    #     current_recordings = load_recordings(data_folder, current_patient_data)
 
-        # Extract features.
-        current_features = get_features(current_patient_data, current_recordings)
-        features.append(current_features)
+    #     # Extract features.
+    #     current_features = get_features(current_patient_data, current_recordings)
+    #     features.append(current_features)
 
-        # Extract labels and use one-hot encoding.
-        current_labels = np.zeros(num_classes, dtype=int)
-        label = get_label(current_patient_data)
-        if label in classes:
-            j = classes.index(label)
-            current_labels[j] = 1
-        labels.append(current_labels)
+    #     # Extract labels and use one-hot encoding.
+    #     current_labels = np.zeros(num_classes, dtype=int)
+    #     label = get_label(current_patient_data)
+    #     if label in classes:
+    #         j = classes.index(label)
+    #         current_labels[j] = 1
+    #     labels.append(current_labels)
     
-    features = np.vstack(features)
-    labels = np.vstack(labels)
+    # features = np.vstack(features)
+    # labels = np.vstack(labels)
 
-    # Train the model.
-    if verbose >= 1:
-        print('Training model...')
+    # # Train the model.
+    # if verbose >= 1:
+    #     print('Training model...')
 
-    # Define parameters for random forest classifier.
-    n_estimators = 10    # Number of trees in the forest.
-    max_leaf_nodes = 100 # Maximum number of leaf nodes in each tree.
-    random_state = 123   # Random state; set for reproducibility.
+    # # Define parameters for random forest classifier.
+    # n_estimators = 10    # Number of trees in the forest.
+    # max_leaf_nodes = 100 # Maximum number of leaf nodes in each tree.
+    # random_state = 123   # Random state; set for reproducibility.
 
-    imputer = SimpleImputer().fit(features)
-    features = imputer.transform(features)
-    classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, labels)
+    # imputer = SimpleImputer().fit(features)
+    # features = imputer.transform(features)
+    # classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, labels)
 
     # Save the model.
-    save_challenge_model(model_folder, classes, imputer, classifier)
+    # save_challenge_model(model_folder, classes, imputer, classifier)
+    training_resnet_mlp(data_folder, model_folder, verbose)
 
     if verbose >= 1:
         print('Done.')
@@ -195,14 +198,16 @@ def get_features(data, recordings):
     recording_features = recording_features.flatten()
 
     features = np.hstack(([age], sex_features, [height], [weight], [is_pregnant], recording_features))
-
+    features = np.nan_to_num(features)
     return np.asarray(features, dtype=np.float32)
 
 
-# 直接三分类，使用CONV2D+MLP
-class RESNET_MLP_C3:
+# ResNet+MLP
+class RESNET_MLP:
 
     def __init__(self, output_directory, input_shape_a, input_shape_b, nb_classes, verbose=False, build=True, load_weights=False):
+        if not output_directory.endswith('/'):
+            output_directory = output_directory + '/'
         self.output_directory = output_directory
         if build == True:
             self.model = self.build_model(input_shape_a, input_shape_b, nb_classes)
@@ -210,10 +215,7 @@ class RESNET_MLP_C3:
                 self.model.summary()
             self.verbose = verbose
             if load_weights == True:
-                self.model.load_weights(self.output_directory
-                                        .replace('resnet_augment', 'resnet')
-                                        .replace('TSC_itr_augment_x_10', 'TSC_itr_10')
-                                        + '/model_init.hdf5')
+                self.model.load_weights(self.output_directory + '/model_init.hdf5')
             else:
                 self.model.save_weights(self.output_directory + 'model_init.hdf5')
         return
@@ -293,14 +295,10 @@ class RESNET_MLP_C3:
         model2 = keras.Model(inputs=input_b, outputs=ds2)
 
         combined = keras.layers.concatenate([model_a.output, model2.output])
-        # output_layer = keras.layers.Dense(nb_classes, activation='softmax')(combined)
         output_layer = keras.layers.Dense(nb_classes, activation='sigmoid')(combined)
         
         
         model = keras.models.Model(inputs=[input_a, input_b], outputs=output_layer)
-
-        # model.compile(loss='categorical_crossentropy', optimizer=keras.optimizers.Adam(),
-        #               metrics=['accuracy'])
 
         model.compile(loss=tf.keras.losses.BinaryCrossentropy(), optimizer = keras.optimizers.Adam(), 
             metrics=[tf.keras.metrics.BinaryAccuracy(name='accuracy', dtype=None, threshold=0.5), 
@@ -315,28 +313,6 @@ class RESNET_MLP_C3:
                         multi_label=True,
                         label_weights=None)
             ])
-        
-        # model.compile(loss='mse', optimizer = keras.optimizers.Adam(), 
-        #     metrics=['accuracy', 'mse', keras.metrics.Recall(name='Recall'), keras.metrics.Precision(name='Precision'), 
-        #             keras.metrics.AUC(
-        #                 num_thresholds=200,
-        #                 curve="ROC",
-        #                 summation_method="interpolation",
-        #                 name="AUC",
-        #                 dtype=None,
-        #                 thresholds=None,
-        #                 multi_label=False,
-        #                 label_weights=None)
-        #     ])
-
-        # reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='loss', factor=0.5, patience=50, min_lr=0.0001)
-
-        # file_path = self.output_directory + 'resnet_best_model.hdf5'
-
-        # model_checkpoint = keras.callbacks.ModelCheckpoint(filepath=file_path, monitor='loss',
-        #                                                    save_best_only=True)
-
-        # self.callbacks = [reduce_lr, model_checkpoint]
 
         reduce_lr = keras.callbacks.ReduceLROnPlateau(
             monitor='loss', factor=0.1, patience=5, verbose=2, 
@@ -449,19 +425,19 @@ def get_training_data(data, recordings, padding=400, fs=4000):
 
 
 # 多分类，直接训练为三分类+MLP
-def training_resnet_mlp(data_folder):
+def training_resnet_mlp(data_folder, model_folder, verbose=1):
     patient_files = find_patient_files(data_folder)
     num_patient_files = len(patient_files)
     print(num_patient_files)
 
-    PAD_LENGTH = 300
+    PAD_LENGTH = 256
 
     # label分析
     classes = ['Present', 'Unknown', 'Absent']
     num_classes = len(classes)
     features = list()
     recordings = list()
-    labels = list()
+    labels = list()    
 
     for i in range(num_patient_files):
         # Load the current patient data and recordings.
@@ -502,30 +478,33 @@ def training_resnet_mlp(data_folder):
     print(labels.shape)
 
     # random
-    random_seed = 20
-    random.seed(random_seed)
-    random.shuffle(recordings)
-    random.seed(random_seed)
-    random.shuffle(features)
-    random.seed(random_seed)
-    random.shuffle(labels)
+    # random_seed = 20
+    # random.seed(random_seed)
+    # random.shuffle(recordings)
+    # random.seed(random_seed)
+    # random.shuffle(features)
+    # random.seed(random_seed)
+    # random.shuffle(labels)
 
     # X = [recordings,features]
     # X_pd = pd.DataFrame(X)
 
-    X_train, y_train, X_test, y_test = [recordings[:753],features[:753]], labels[:753],[recordings[753:],features[753:]], labels[753:]
+    # X_train, X_test, y_train, y_test = [recordings[:753],features[:753]], labels[:753],[recordings[753:],features[753:]], labels[753:]
 
-    # X_train, X_test, X2_train, X2_test, y_train, y_test = train_test_split(recordings, features, labels, test_size=0.2, random_state=20)
+    X_train, X_test, X2_train, X2_test, y_train, y_test = train_test_split(recordings, features, labels, test_size=0.2, random_state=20)
 
-    # print(len(X_train))
-    # print(len(X_test))
-    # print(len(X2_train))
-    # print(len(X2_test))
-    # print(len(y_train))
-    # print(len(y_test))
+    print(len(X_train))
+    print(len(X_test))
+    print(len(y_train))
+    print(len(y_test))
     # print(X_train)
     
-    model = RESNET_MLP_C3('model/resnet/', (128, PAD_LENGTH, 5), (26,), 3, verbose=True)
-    model.fit(X_train, y_train, X_test, y_test)
-    # model.fit([X_train, X2_train], y_train, [X_test, X2_test], y_test)
+    model = RESNET_MLP(model_folder, (128, PAD_LENGTH, 5), (26,), 3, verbose=verbose>1)
+    # model.fit(X_train, y_train, X_test, y_test)
+    model.fit([X_train, X2_train], y_train, [X_test, X2_test], y_test)
     
+
+if __name__ == '__main__':
+    data_folder = 'training_data'
+    model_folder = 'model'
+    training_resnet_mlp(data_folder, model_folder)
