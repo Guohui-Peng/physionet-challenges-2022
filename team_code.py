@@ -11,8 +11,6 @@
 
 from helper_code import *
 import numpy as np, scipy as sp, os
-# from sklearn.impute import SimpleImputer
-# from sklearn.ensemble import RandomForestClassifier
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 import tensorflow.keras as keras
@@ -21,10 +19,6 @@ import librosa
 import time
 import warnings
 warnings.filterwarnings("ignore")
-# import random
-# from sklearn.model_selection import train_test_split
-# import pandas as pd
-# import matplotlib.pyplot as plt
 
 ################################################################################
 #
@@ -78,12 +72,6 @@ def run_challenge_model(model, data, recordings, verbose):
 # Optional functions. You can change or remove these functions and/or add new functions.
 #
 ################################################################################
-
-# Save your trained model.
-# def save_challenge_model(model_folder, classes, imputer, classifier):
-#     d = {'classes': classes, 'imputer': imputer, 'classifier': classifier}
-#     filename = os.path.join(model_folder, 'model.sav')
-#     joblib.dump(d, filename, protocol=0)
 
 # Extract features from the data.
 def get_features(data, recordings):
@@ -270,27 +258,19 @@ class RESNET_MLP:
         nb_epochs = 1500
 
         if not x_val is None:
-            hist = self.model.fit(x_train, y_train, batch_size=batch_size, epochs=nb_epochs,
+            self.model.fit(x_train, y_train, batch_size=batch_size, epochs=nb_epochs,
                               verbose=self.verbose>1, validation_data=(x_val, y_val), callbacks=self.callbacks)
         else:
-            hist = self.model.fit(x_train, y_train, batch_size=batch_size, epochs=nb_epochs,
+            self.model.fit(x_train, y_train, batch_size=batch_size, epochs=nb_epochs,
                               verbose=self.verbose>1, callbacks=self.callbacks)
 
         self.model.save(self.output_directory + 'last_model',include_optimizer=False)
         keras.backend.clear_session()
 
-    def predict(self, x_test, y_true, x_train, y_train, y_test, return_df_metrics=True):
-        start_time = time.time()
+    def predict(self, x_test):
         model_path = self.output_directory + 'best_model'
         model = keras.models.load_model(model_path)
         y_pred = model.predict(x_test)
-        # if return_df_metrics:
-        #     y_pred = np.argmax(y_pred, axis=1)
-        #     # df_metrics = calculate_metrics(y_true, y_pred, 0.0)
-        #     return df_metrics
-        # else:
-        #     test_duration = time.time() - start_time
-        #     # save_test_duration(self.output_directory + 'test_duration.csv', test_duration)
         return y_pred
 
 
@@ -383,9 +363,3 @@ def training_resnet_mlp(data_folder, model_folder, verbose=1):
     if verbose >= 1:
         print('Training model...')    
     model.fit([X_train, X2_train], y_train)
-    
-
-if __name__ == '__main__':
-    data_folder = 'training_data'
-    model_folder = 'model'
-    training_resnet_mlp(data_folder, model_folder)
