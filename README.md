@@ -1,27 +1,34 @@
 # Python example classifier code for the George B. Moody PhysioNet Challenge 2022
 
 This project uses tensorflow version 2.7.1 and runs successfully in the Docker environment.  
+
 It supports running on GPU and can also run on CPU, but I strongly recommend using GPU.  
-I use Nvidia 3060 12G graphics card, and it takes about 2 hours to complete the training through GPU. But when I switched to CPU, it took about 110 hours. Of course my PC's CPU is just an AMD Ryzen 7 3700X, a more powerful CPU should reduce this training time.  
+
+I use Nvidia 3060 12G graphics card, and it takes about 2 hours to complete the training through GPU. But when I switch to CPU, it takes about 110 hours to complete the training. Of course my PC's CPU is just an AMD Ryzen 7 3700X, a more powerful CPU should reduce this training time.  
 
 The Docker configuration of this project defaults to using Nvidia GPU, which can be used directly when using GPU for training.  
-If you can't use an Nvidia GPU, you can use the CPU version by modifying the first two lines of Docker.  
+
+If you don't have an Nvidia GPU or can't use it, you can use the CPU version by modifying the first two lines of Dockerfile.  
 
 With GPU, please keep the default Docker configuration, you don't need to modify it.  
 
-```Docker
+Configuration for GPU:  
+
+```Dockerfile
 FROM tensorflow/tensorflow:2.7.1-gpu
 # FROM tensorflow/tensorflow:2.7.1
 ```
 
 With CPU, please comment the first line, and uncomment the second line. It is recommended to choose this method only when the GPU is not available.  
 
-```Docker
+Configuration for CPU:  
+
+```Dockerfile
 # FROM tensorflow/tensorflow:2.7.1-gpu
 FROM tensorflow/tensorflow:2.7.1
 ```  
 
-For specific steps, please refer to "How do I run these scripts in Docker?"
+For detailed steps, please refer to "How do I run these scripts in Docker?"
 
 Precautions:
 
