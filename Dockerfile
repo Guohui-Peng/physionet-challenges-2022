@@ -16,4 +16,4 @@ RUN apt update && \
     /usr/bin/python3 -m pip install --upgrade pip
 
 ## Include the following line if you have a requirements.txt file.
-RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
+RUN pip install -r requirements.txt

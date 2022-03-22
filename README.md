@@ -35,7 +35,7 @@ Precautions:
 1. If your computer is using Nvidia GPU acceleration for the first time, you need to confirm that you have installed the Nvidia graphics card driver. You may also need to install nvidia-container-runtime under Linux.  
 Of course, if you have already run other Nvidia GPU accelerated projects, there is no need to reinstall.  
 For details, refer to:  
-[TensorFlow Docker](https://www.tensorflow.org/install/docker)  
+[How to use TensorFlow Docker](https://www.tensorflow.org/install/docker)  
 [Install NVIDIA Container Toolkit for Linux](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html#docker)  
 2. To enable GPU acceleration, you need to add the parameter `--gpus all` when running docker  
 
@@ -97,7 +97,7 @@ If you have trouble running your code, then please try the follow steps to run t
         Exit
     ```
 
-## Data analysis  
+## Analyze Challenge Data
 
 There were 942 patient data.
 
