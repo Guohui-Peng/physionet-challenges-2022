@@ -1,5 +1,120 @@
 # Python example classifier code for the George B. Moody PhysioNet Challenge 2022
 
+This project uses tensorflow version 2.7.1 and runs successfully in the Docker environment.
+It supports running on GPU and can also run on CPU, but I strongly recommend using GPU.
+I use Nvidia 3060 12G graphics card, and it takes about 2 hours to complete the training through GPU. But when I switched to CPU, it took about 110 hours. Of course my PC's CPU is just an AMD Ryzen 7 3700X, a more powerful CPU should reduce this training time.
+
+The Docker configuration of this project defaults to using Nvidia GPU, which can be used directly when using GPU for training.
+If you can't use an Nvidia GPU, you can use the CPU version by modifying the first two lines of Docker.
+
+With GPU, please keep the default Docker configuration, you don't need to modify it.  
+
+```Docker
+FROM tensorflow/tensorflow:2.7.1-gpu
+# FROM tensorflow/tensorflow:2.7.1
+```
+
+With CPU, please comment the first line, and uncomment the second line. It is recommended to choose this method only when the GPU is not available. I haven't fully tested the CPU version, I can only guarantee it.  
+
+```Docker
+# FROM tensorflow/tensorflow:2.7.1-gpu
+FROM tensorflow/tensorflow:2.7.1
+```  
+
+For specific steps, please refer to "How do I run these scripts in Docker?"
+
+Precautions:
+
+1. If your computer is using Nvidia GPU acceleration for the first time, you need to confirm that you have installed the Nvidia graphics card driver. You may also need to install nvidia-container-runtime under Linux.  
+Of course, if you have already run other Nvidia GPU accelerated projects, there is no need to reinstall.  
+For details, refer to:  
+[TensorFlow Docker](https://www.tensorflow.org/install/docker)  
+[Install NVIDIA Container Toolkit for Linux](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html#docker)  
+2. To enable GPU acceleration, you need to add the parameter `--gpus all` when running docker  
+
+## How do I run these scripts in Docker?
+
+Docker and similar platforms allow you to containerize and package your code with specific dependencies so that you can run your code reliably in other computing environments and operating systems.
+
+To guarantee that we can run your code, please [install](https://docs.docker.com/get-docker/) Docker, build a Docker image from your code, and run it on the training data. To quickly check your code for bugs, you may want to run it on a small subset of the training data.
+
+If you have trouble running your code, then please try the follow steps to run the example code.
+
+1. Create a folder `example` in your home directory with several subfolders.
+
+    ```bash
+        user@computer:~$ cd ~/
+        user@computer:~$ mkdir example
+        user@computer:~$ cd example
+        user@computer:~/example$ mkdir training_data test_data model test_outputs
+    ```
+
+2. Download the training data from the [Challenge website](https://physionetchallenges.org/2022). Put some of the training data in `training_data` and `test_data`. You can use some of the training data to check your code (and should perform cross-validation on the training data to evaluate your algorithm).
+
+3. Download or clone this repository in your terminal.
+
+    ```bash
+        user@computer:~/example$ git clone https://github.com/Guohui-Peng/physionet-challenges-2022.git
+    ```
+
+4. Build a Docker image and run the example code in your terminal.
+
+    ```bash
+        user@computer:~/example$ ls
+        model  physionet-challenges-2022  test_data  test_outputs  training_data
+
+        user@computer:~/example$ cd physionet-challenges-2022/
+
+        user@computer:~/example/physionet-challenges-2022$ docker build -t image .
+
+        Sending build context to Docker daemon  [...]kB
+        [...]
+        Successfully tagged image:latest
+
+        user@computer:~/example/physionet-challenges-2022$ docker run --gpus all -it -v ~/example/model:/physionet/model -v ~/example/test_data:/physionet/test_data -v ~/example/test_outputs:/physionet/test_outputs -v ~/example/training_data:/physionet/training_data image bash
+
+        root@[...]:/physionet# ls
+            Dockerfile             README.md         test_outputs
+            evaluate_model.py      requirements.txt  training_data
+            helper_code.py         team_code.py      train_model.py
+            LICENSE                run_model.py
+
+        root@[...]:/physionet# python train_model.py training_data model
+
+        root@[...]:/physionet# python run_model.py model test_data test_outputs
+
+        root@[...]:/physionet# python evaluate_model.py test_data test_outputs scores.csv class_scores.csv
+        [...]
+
+        root@[...]:/physionet# exit
+        Exit
+    ```
+
+## Data analysis  
+
+There were 942 patient data.
+
+The recorded data for each patient in the dataset were counted.
+
+| Number of recordings | Number of patients |
+|  ----  | ----:  |
+| 1 | 62 |
+| 2 | 156 |
+| 3 | 123 |
+| 4 | 588 |
+| 5 | 10 |
+| 6 | 3 |
+| Total | 942 |
+
+Recording lengths: 20608~258048
+
+Recording classification qty:  
+Unkown: 68  
+Absent: 695  
+Present: 179  
+
+---
+
 ## What's in this repository?
 
 This repository contains a simple example to illustrate how to format a Python entry for the George B. Moody PhysioNet Challenge 2022. You can try it by running the following commands on the Challenge training sets. These commands should take a few minutes or less to run from start to finish on a recent personal computer.
@@ -49,58 +164,6 @@ To train and save your models, please edit the `train_challenge_model` function 
 
 To load and run your trained model, please edit the `load_challenge_model` and `run_challenge_model` functions in the `team_code.py` script. Please do not edit the input or output arguments of the functions of the `load_challenge_model` and `run_challenge_model` functions.
 
-## How do I run these scripts in Docker?
-
-Docker and similar platforms allow you to containerize and package your code with specific dependencies so that you can run your code reliably in other computing environments and operating systems.
-
-To guarantee that we can run your code, please [install](https://docs.docker.com/get-docker/) Docker, build a Docker image from your code, and run it on the training data. To quickly check your code for bugs, you may want to run it on a small subset of the training data.
-
-If you have trouble running your code, then please try the follow steps to run the example code.
-
-1. Create a folder `example` in your home directory with several subfolders.
-
-        user@computer:~$ cd ~/
-        user@computer:~$ mkdir example
-        user@computer:~$ cd example
-        user@computer:~/example$ mkdir training_data test_data model test_outputs
-
-2. Download the training data from the [Challenge website](https://physionetchallenges.org/2022). Put some of the training data in `training_data` and `test_data`. You can use some of the training data to check your code (and should perform cross-validation on the training data to evaluate your algorithm).
-
-3. Download or clone this repository in your terminal.
-
-        user@computer:~/example$ git clone https://github.com/Guohui-Peng/physionet-challenges-2022.git
-
-4. Build a Docker image and run the example code in your terminal.
-
-        user@computer:~/example$ ls
-        model  physionet-challenges-2022  test_data  test_outputs  training_data
-
-        user@computer:~/example$ cd physionet-challenges-2022/
-
-        user@computer:~/example/physionet-challenges-2022$ docker build -t image .
-
-        Sending build context to Docker daemon  [...]kB
-        [...]
-        Successfully tagged image:latest
-
-        user@computer:~/example/physionet-challenges-2022$ docker run --gpus all -it -v ~/example/model:/physionet/model -v ~/example/test_data:/physionet/test_data -v ~/example/test_outputs:/physionet/test_outputs -v ~/example/training_data:/physionet/training_data image bash
-
-        root@[...]:/physionet# ls
-            Dockerfile             README.md         test_outputs
-            evaluate_model.py      requirements.txt  training_data
-            helper_code.py         team_code.py      train_model.py
-            LICENSE                run_model.py
-
-        root@[...]:/physionet# python train_model.py training_data model
-
-        root@[...]:/physionet# python run_model.py model test_data test_outputs
-
-        root@[...]:/physionet# python evaluate_model.py model test_data test_outputs
-        [...]
-
-        root@[...]:/physionet# exit
-        Exit
-
 ## How do I learn more?
 
 Please see the [Challenge website](https://physionetchallenges.org/2022/) for more details. Please post questions and concerns on the [Challenge discussion forum](https://groups.google.com/forum/#!forum/physionet-challenges).
@@ -112,25 +175,3 @@ Please see the [Challenge website](https://physionetchallenges.org/2022/) for mo
 * [Scoring code](https://github.com/physionetchallenges/evaluation-2022)
 * [Frequently asked questions (FAQ) for this year's Challenge](https://physionetchallenges.org/2022/faq/) 
 * [Frequently asked questions (FAQ) about the Challenges in general](https://physionetchallenges.org/faq/) 
-
-## Data analysis
-There were 942 patient data.
-
-The recorded data for each patient in the dataset were counted.
-
-| Number of recordings | Number of patients |
-|  ----  | ----:  |
-| 1 | 62 |
-| 2 | 156 |
-| 3 | 123 |
-| 4 | 588 |
-| 5 | 10 |
-| 6 | 3 |
-| Total | 942 |
-
-Recording lengths: 20608~258048
-
-Recording classification qty:  
-Unkown: 68  
-Absent: 695  
-Present: 179  

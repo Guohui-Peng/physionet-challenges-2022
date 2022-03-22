@@ -1,4 +1,5 @@
 FROM tensorflow/tensorflow:2.7.1-gpu
+# FROM tensorflow/tensorflow:2.7.1
 
 ## The MAINTAINER instruction sets the author field of the generated images.
 MAINTAINER pguohui2004@163.com
