@@ -1,29 +1,13 @@
 # Python example classifier code for the George B. Moody PhysioNet Challenge 2022
 
-This project uses tensorflow version 2.7.1 and runs successfully in the Docker environment.  
+This project uses tensorflow version 2.7.1 and runs successfully in Docker environment.  
 
-It supports running on GPU and can also run on CPU, but I strongly recommend using GPU.  
+It supports running on GPU and can also run on CPU, I strongly recommend using Nvidia GPU.  
 
-I use Nvidia 3060 12G graphics card, and it takes about 2 hours to complete the training through GPU. But when I switch to CPU, it takes about 110 hours to complete the training. Of course my PC's CPU is just an AMD Ryzen 7 3700X, a more powerful CPU should reduce this training time.  
+It takes about 2 hours to complete the training through GPU using Nvidia 3060 12G graphics card, and it takes about 110 hours to complete the training using CPU of AMD Ryzen 7 3700X.  
 
-The Docker configuration of this project defaults to using Nvidia GPU, which can be used directly when using GPU for training.  
+The default setting about Docker configuration of this project is to use GPU. If you don't have GPU, or decide to switch to CPU, please alter the first two lines of the Dockerfile in the following. Please comment the first line, and uncomment the second line. It is recommended to choose this method when GPU is not available.  
 
-If you don't have an Nvidia GPU or can't use it, you can use the CPU version by modifying the first two lines of Dockerfile.  
-
-With GPU, please keep the default Docker configuration, you don't need to modify it.  
-
-Configuration for GPU:  
-
-```Dockerfile
-FROM tensorflow/tensorflow:2.7.1-gpu
-# FROM tensorflow/tensorflow:2.7.1
-```
-
-With CPU, please comment the first line, and uncomment the second line. It is recommended to choose this method only when the GPU is not available.  
-
-Configuration for CPU:  
-
-```Dockerfile
 # FROM tensorflow/tensorflow:2.7.1-gpu
 FROM tensorflow/tensorflow:2.7.1
 ```  
@@ -32,9 +16,8 @@ For detailed steps, please refer to "How do I run these scripts in Docker?"
 
 Precautions:
 
-1. If your computer is using Nvidia GPU acceleration for the first time, you need to confirm that you have installed the Nvidia graphics card driver. You may also need to install nvidia-container-runtime under Linux.  
-Of course, if you have already run other Nvidia GPU accelerated projects, there is no need to reinstall.  
-For details, refer to:  
+1. If your computer is using Nvidia GPU acceleration for the first time, you need to confirm that you have installed the Nvidia graphics card driver. You may also need to install nvidia-container-runtime under Linux.  If you have already run other Nvidia GPU accelerated projects, there is no need to reinstall.  
+For details, please refer to:  
 [How to use TensorFlow Docker](https://www.tensorflow.org/install/docker)  
 [Install NVIDIA Container Toolkit for Linux](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html#docker)  
 2. To enable GPU acceleration, you need to add the parameter `--gpus all` when running docker  
