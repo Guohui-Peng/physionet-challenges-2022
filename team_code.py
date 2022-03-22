@@ -9,17 +9,16 @@
 #
 ################################################################################
 
-from tabnanny import verbose
 from helper_code import *
-import numpy as np, scipy as sp, scipy.stats, os, sys, joblib
-from sklearn.impute import SimpleImputer
-from sklearn.ensemble import RandomForestClassifier
+import numpy as np, scipy as sp, os
+# from sklearn.impute import SimpleImputer
+# from sklearn.ensemble import RandomForestClassifier
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 import tensorflow.keras as keras
 import tensorflow as tf
 import librosa
-import time, datetime
+import time
 import warnings
 warnings.filterwarnings("ignore")
 # import random
@@ -35,65 +34,7 @@ warnings.filterwarnings("ignore")
 
 # Train your model.
 def train_challenge_model(data_folder, model_folder, verbose):
-    
-    # # Find the patient data files.
-    # patient_files = find_patient_files(data_folder)
-    # num_patient_files = len(patient_files)
 
-    # if num_patient_files==0:
-    #     raise Exception('No data was provided.')
-
-    # # Create a folder for the model if it does not already exist.
-    # os.makedirs(model_folder, exist_ok=True)
-
-    # classes = ['Present', 'Unknown', 'Absent']
-    # num_classes = len(classes)
-
-    # # Extract the features and labels.
-    # if verbose >= 1:
-    #     print('Extracting features and labels from the Challenge data...')
-
-    # features = list()
-    # labels = list()
-
-    # for i in range(num_patient_files):
-    #     if verbose >= 2:
-    #         print('    {}/{}...'.format(i+1, num_patient_files))
-
-    #     # Load the current patient data and recordings.
-    #     current_patient_data = load_patient_data(patient_files[i])
-    #     current_recordings = load_recordings(data_folder, current_patient_data)
-
-    #     # Extract features.
-    #     current_features = get_features(current_patient_data, current_recordings)
-    #     features.append(current_features)
-
-    #     # Extract labels and use one-hot encoding.
-    #     current_labels = np.zeros(num_classes, dtype=int)
-    #     label = get_label(current_patient_data)
-    #     if label in classes:
-    #         j = classes.index(label)
-    #         current_labels[j] = 1
-    #     labels.append(current_labels)
-    
-    # features = np.vstack(features)
-    # labels = np.vstack(labels)
-
-    # # Train the model.
-    # if verbose >= 1:
-    #     print('Training model...')
-
-    # # Define parameters for random forest classifier.
-    # n_estimators = 10    # Number of trees in the forest.
-    # max_leaf_nodes = 100 # Maximum number of leaf nodes in each tree.
-    # random_state = 123   # Random state; set for reproducibility.
-
-    # imputer = SimpleImputer().fit(features)
-    # features = imputer.transform(features)
-    # classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, labels)
-
-    # Save the model.
-    # save_challenge_model(model_folder, classes, imputer, classifier)
     training_resnet_mlp(data_folder, model_folder, verbose)
 
     if verbose >= 1:
@@ -101,33 +42,35 @@ def train_challenge_model(data_folder, model_folder, verbose):
 
 # Load your trained model. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
-def load_challenge_model(model_folder, verbose):
-    filename = os.path.join(model_folder, 'model.sav')
-    return joblib.load(filename)
+def load_challenge_model(model_folder, verbose):    
+    my_model_folder = model_folder + '/best_model'    
+    new_model = keras.models.load_model(my_model_folder)
+    return new_model
 
 # Run your trained model. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
 def run_challenge_model(model, data, recordings, verbose):
-    classes = model['classes']
-    imputer = model['imputer']
-    classifier = model['classifier']
-
+    PAD_LENGTH = 256
     # Load features.
-    features = get_features(data, recordings)
+    current_recording = get_wav_data(data, recordings, PAD_LENGTH)            
+    current_recording = np.reshape(current_recording, (1, 128, PAD_LENGTH, 5))    
+   
+    current_features = get_features(data, recordings)
+    current_features = np.reshape(current_features, (1, len(current_features))) 
+    
+    pred = model.predict([current_recording, current_features])
 
-    # Impute missing data.
-    features = features.reshape(1, -1)
-    features = imputer.transform(features)
-
+    classes = ['Present', 'Unknown', 'Absent']
     # Get classifier probabilities.
-    probabilities = classifier.predict_proba(features)
-    probabilities = np.asarray(probabilities, dtype=np.float32)[:, 0, 1]
+    pred_softmax = tf.nn.softmax(pred[0])
+    pred_softmax = pred_softmax.numpy()
+    probabilities = pred_softmax
 
     # Choose label with higher probability.
     labels = np.zeros(len(classes), dtype=np.int_)
-    idx = np.argmax(probabilities)
+    idx = np.argmax(pred_softmax)
     labels[idx] = 1
-
+    
     return classes, labels, probabilities
 
 ################################################################################
@@ -137,10 +80,10 @@ def run_challenge_model(model, data, recordings, verbose):
 ################################################################################
 
 # Save your trained model.
-def save_challenge_model(model_folder, classes, imputer, classifier):
-    d = {'classes': classes, 'imputer': imputer, 'classifier': classifier}
-    filename = os.path.join(model_folder, 'model.sav')
-    joblib.dump(d, filename, protocol=0)
+# def save_challenge_model(model_folder, classes, imputer, classifier):
+#     d = {'classes': classes, 'imputer': imputer, 'classifier': classifier}
+#     filename = os.path.join(model_folder, 'model.sav')
+#     joblib.dump(d, filename, protocol=0)
 
 # Extract features from the data.
 def get_features(data, recordings):
@@ -203,19 +146,15 @@ def get_features(data, recordings):
 # ResNet+MLP
 class RESNET_MLP:
 
-    def __init__(self, output_directory, input_shape_a, input_shape_b, nb_classes, verbose=1, build=True, load_weights=False):
+    def __init__(self, output_directory, input_shape_a, input_shape_b, nb_classes, verbose=1, build=True):
         if not output_directory.endswith('/'):
             output_directory = output_directory + '/'
         self.output_directory = output_directory
+        self.verbose = verbose
         if build == True:
             self.model = self.build_model(input_shape_a, input_shape_b, nb_classes)
             if (verbose > 1):
                 self.model.summary()
-            self.verbose = verbose
-            if load_weights == True:
-                self.model.load_weights(self.output_directory + '/model_init.hdf5')
-            else:
-                self.model.save_weights(self.output_directory + 'model_init.hdf5')
         return
 
     def build_model(self, input_shape_a, input_shape_b, nb_classes):
@@ -308,15 +247,15 @@ class RESNET_MLP:
             ])
 
         reduce_lr = keras.callbacks.ReduceLROnPlateau(
-            monitor='loss', factor=0.1, patience=5, verbose=verbose, 
+            monitor='loss', factor=0.1, patience=5, verbose=self.verbose, 
             min_delta=0.0001, cooldown=0, min_lr=1e-7
         )
 
-        early_stop = keras.callbacks.EarlyStopping(monitor='loss', mode='min', verbose=verbose, patience=10)
+        early_stop = keras.callbacks.EarlyStopping(monitor='loss', mode='min', verbose=self.verbose, patience=10)
 
         # Save the model.
-        file_path = self.output_directory+'best_model.hdf5'        
-        model_checkpoint = keras.callbacks.ModelCheckpoint(filepath=file_path, monitor='loss', mode='min',
+        file_path = self.output_directory+'best_model'
+        model_checkpoint = keras.callbacks.ModelCheckpoint(filepath=file_path, monitor='loss', mode='min', save_weights_only=False,
             save_best_only=True)
 
         self.callbacks = [reduce_lr, early_stop, model_checkpoint]
@@ -337,12 +276,12 @@ class RESNET_MLP:
             hist = self.model.fit(x_train, y_train, batch_size=batch_size, epochs=nb_epochs,
                               verbose=self.verbose>1, callbacks=self.callbacks)
 
-        self.model.save(self.output_directory + 'resnet_last_model.hdf5')
+        self.model.save(self.output_directory + 'last_model',include_optimizer=False)
         keras.backend.clear_session()
 
     def predict(self, x_test, y_true, x_train, y_train, y_test, return_df_metrics=True):
         start_time = time.time()
-        model_path = self.output_directory + 'best_model.hdf5'
+        model_path = self.output_directory + 'best_model'
         model = keras.models.load_model(model_path)
         y_pred = model.predict(x_test)
         # if return_df_metrics:
@@ -355,8 +294,8 @@ class RESNET_MLP:
         return y_pred
 
 
-# Get the recordings of 2022
-def get_training_data(data, recordings, padding=400, fs=4000):
+# Get the wav data
+def get_wav_data(data, recordings, padding=400, fs=4000):
     locations = get_locations(data)
     
     recording_locations = ['AV', 'MV', 'PV', 'TV', 'PhC']
@@ -383,6 +322,7 @@ def get_training_data(data, recordings, padding=400, fs=4000):
         for i in range(num_recording_locations-num_recording_features):
             recording_features.append(np.zeros((128, padding)))
     return recording_features   
+
 
 
 # Training with RESNET+MLP
@@ -416,7 +356,7 @@ def training_resnet_mlp(data_folder, model_folder, verbose=1):
         current_recordings = load_recordings(data_folder, current_patient_data)
 
         # Extract audio data.
-        current_recording = get_training_data(current_patient_data, current_recordings, PAD_LENGTH)        
+        current_recording = get_wav_data(current_patient_data, current_recordings, PAD_LENGTH)        
         recording = current_recording
         recording = np.reshape(current_recording, (1, 128, PAD_LENGTH, 5))
         recordings.append(recording)
@@ -437,7 +377,6 @@ def training_resnet_mlp(data_folder, model_folder, verbose=1):
     features = np.vstack(features)
     labels = np.vstack(labels)
     
-    # X_train, X_test, X2_train, X2_test, y_train, y_test = train_test_split(recordings, features, labels, test_size=0.2, random_state=20)
     X_train, X2_train, y_train = recordings, features, labels
     
     model = RESNET_MLP(model_folder, (128, PAD_LENGTH, 5), (26,), 3, verbose=verbose)
