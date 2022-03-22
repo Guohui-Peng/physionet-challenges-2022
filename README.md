@@ -8,6 +8,7 @@ It takes about 2 hours to complete the training through GPU using Nvidia 3060 12
 
 The default setting about Docker configuration of this project is to use GPU. If you don't have GPU, or decide to switch to CPU, please alter the first two lines of the Dockerfile in the following. Please comment the first line, and uncomment the second line. It is recommended to choose this method when GPU is not available.  
 
+```Dockerfile
 # FROM tensorflow/tensorflow:2.7.1-gpu
 FROM tensorflow/tensorflow:2.7.1
 ```  
