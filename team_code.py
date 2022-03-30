@@ -39,7 +39,23 @@ def train_challenge_model(data_folder, model_folder, verbose):
 # arguments of this function.
 def load_challenge_model(model_folder, verbose):    
     my_model_folder = model_folder + '/best_model'    
-    new_model = keras.models.load_model(my_model_folder)
+    # new_model = keras.models.load_model(my_model_folder)
+    new_model = RESNET_MLP(3)
+    new_model.compile(loss=keras.losses.BinaryCrossentropy(), optimizer = keras.optimizers.Adam(), 
+            metrics=[keras.metrics.BinaryAccuracy(name='accuracy', dtype=None, threshold=0.5), 
+                    keras.metrics.Recall(name='Recall'), keras.metrics.Precision(name='Precision'), 
+                    keras.metrics.AUC(
+                        num_thresholds=200,
+                        curve="ROC",
+                        summation_method="interpolation",
+                        name="AUC",
+                        dtype=None,
+                        thresholds=None,
+                        multi_label=True,
+                        label_weights=None)
+                    ,new_model.F1_Score
+            ])
+    new_model.load_weights(my_model_folder).expect_partial()
     return new_model
 
 # Run your trained model. This function is *required*. You should edit this function to add your code, but do *not* change the
@@ -47,7 +63,8 @@ def load_challenge_model(model_folder, verbose):
 def run_challenge_model(model, data, recordings, verbose):
     PAD_LENGTH = 256
     # Load features.
-    current_recording = get_wav_data(data, recordings, PAD_LENGTH)            
+    current_recording = get_wav_data(data, recordings, PAD_LENGTH)
+    current_recording = np.asarray(current_recording, dtype=np.float32)
     current_recording = np.reshape(current_recording, (1, 128, PAD_LENGTH, 5))    
    
     current_features = get_features(data, recordings)
@@ -243,7 +260,7 @@ def training_resnet_mlp(data_folder, model_folder, verbose=1):
                         thresholds=None,
                         multi_label=True,
                         label_weights=None)
-                    ,F1_Score
+                    ,model.F1_Score
             ])
 
     if verbose >= 1:
@@ -251,7 +268,7 @@ def training_resnet_mlp(data_folder, model_folder, verbose=1):
 
     batch_size = 8
     nb_epochs = 1500
-    save_weights_only = False
+    save_weights_only = True
   
     if not model_folder.endswith('/'):
         model_folder = model_folder + '/'
