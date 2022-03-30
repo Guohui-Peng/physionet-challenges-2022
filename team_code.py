@@ -10,13 +10,14 @@
 ################################################################################
 
 from helper_code import *
+from team_model import *
 import numpy as np, scipy as sp, os
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 import tensorflow.keras as keras
 import tensorflow as tf
 import librosa
-import time
+import random
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -131,149 +132,6 @@ def get_features(data, recordings):
     return np.asarray(features, dtype=np.float32)
 
 
-# ResNet+MLP
-class RESNET_MLP:
-
-    def __init__(self, output_directory, input_shape_a, input_shape_b, nb_classes, verbose=1, build=True):
-        if not output_directory.endswith('/'):
-            output_directory = output_directory + '/'
-        self.output_directory = output_directory
-        self.verbose = verbose
-        if build == True:
-            self.model = self.build_model(input_shape_a, input_shape_b, nb_classes)
-            if (verbose > 1):
-                self.model.summary()
-        return
-
-    def build_model(self, input_shape_a, input_shape_b, nb_classes):
-        n_feature_maps = 64
-
-        input_a = keras.layers.Input(input_shape_a)
-        input_b = keras.layers.Input(input_shape_b)
-
-        # BLOCK 1
-        conv_x = keras.layers.Conv2D(filters=n_feature_maps, kernel_size=8, padding='same')(input_a)
-        conv_x = keras.layers.BatchNormalization()(conv_x)
-        conv_x = keras.layers.Activation('relu')(conv_x)
-
-        conv_y = keras.layers.Conv2D(filters=n_feature_maps, kernel_size=5, padding='same')(conv_x)
-        conv_y = keras.layers.BatchNormalization()(conv_y)
-        conv_y = keras.layers.Activation('relu')(conv_y)
-
-        conv_z = keras.layers.Conv2D(filters=n_feature_maps, kernel_size=3, padding='same')(conv_y)
-        conv_z = keras.layers.BatchNormalization()(conv_z)
-
-        # expand channels for the sum
-        shortcut_y = keras.layers.Conv2D(filters=n_feature_maps, kernel_size=1, padding='same')(input_a)
-        shortcut_y = keras.layers.BatchNormalization()(shortcut_y)
-
-        output_block_1 = keras.layers.add([shortcut_y, conv_z])
-        output_block_1 = keras.layers.Activation('relu')(output_block_1)
-
-        # BLOCK 2
-        conv_x = keras.layers.Conv2D(filters=n_feature_maps * 2, kernel_size=8, padding='same')(output_block_1)
-        conv_x = keras.layers.BatchNormalization()(conv_x)
-        conv_x = keras.layers.Activation('relu')(conv_x)
-
-        conv_y = keras.layers.Conv2D(filters=n_feature_maps * 2, kernel_size=5, padding='same')(conv_x)
-        conv_y = keras.layers.BatchNormalization()(conv_y)
-        conv_y = keras.layers.Activation('relu')(conv_y)
-
-        conv_z = keras.layers.Conv2D(filters=n_feature_maps * 2, kernel_size=3, padding='same')(conv_y)
-        conv_z = keras.layers.BatchNormalization()(conv_z)
-
-        # expand channels for the sum
-        shortcut_y = keras.layers.Conv2D(filters=n_feature_maps * 2, kernel_size=1, padding='same')(output_block_1)
-        shortcut_y = keras.layers.BatchNormalization()(shortcut_y)
-
-        output_block_2 = keras.layers.add([shortcut_y, conv_z])
-        output_block_2 = keras.layers.Activation('relu')(output_block_2)
-
-        # BLOCK 3
-        conv_x = keras.layers.Conv2D(filters=n_feature_maps * 2, kernel_size=8, padding='same')(output_block_2)
-        conv_x = keras.layers.BatchNormalization()(conv_x)
-        conv_x = keras.layers.Activation('relu')(conv_x)
-
-        conv_y = keras.layers.Conv2D(filters=n_feature_maps * 2, kernel_size=5, padding='same')(conv_x)
-        conv_y = keras.layers.BatchNormalization()(conv_y)
-        conv_y = keras.layers.Activation('relu')(conv_y)
-
-        conv_z = keras.layers.Conv2D(filters=n_feature_maps * 2, kernel_size=3, padding='same')(conv_y)
-        conv_z = keras.layers.BatchNormalization()(conv_z)
-
-        # no need to expand channels because they are equal
-        shortcut_y = keras.layers.BatchNormalization()(output_block_2)
-
-        output_block_3 = keras.layers.add([shortcut_y, conv_z])
-        output_block_3 = keras.layers.Activation('relu')(output_block_3)
-
-        # FINAL
-        gap_layer = keras.layers.GlobalAveragePooling2D()(output_block_3)
-        model_a = keras.models.Model(inputs=input_a, outputs=gap_layer)
-
-        ds2 = keras.layers.Dense(54, activation='relu')(input_b)
-        ds2 = keras.layers.Dense(4, activation='sigmoid')(ds2)
-        model2 = keras.Model(inputs=input_b, outputs=ds2)
-
-        combined = keras.layers.concatenate([model_a.output, model2.output])
-        output_layer = keras.layers.Dense(nb_classes, activation='sigmoid')(combined)
-        
-        model = keras.models.Model(inputs=[input_a, input_b], outputs=output_layer)
-
-        model.compile(loss=tf.keras.losses.BinaryCrossentropy(), optimizer = keras.optimizers.Adam(), 
-            metrics=[tf.keras.metrics.BinaryAccuracy(name='accuracy', dtype=None, threshold=0.5), 
-                    keras.metrics.Recall(name='Recall'), keras.metrics.Precision(name='Precision'), 
-                    keras.metrics.AUC(
-                        num_thresholds=200,
-                        curve="ROC",
-                        summation_method="interpolation",
-                        name="AUC",
-                        dtype=None,
-                        thresholds=None,
-                        multi_label=True,
-                        label_weights=None)
-            ])
-
-        reduce_lr = keras.callbacks.ReduceLROnPlateau(
-            monitor='loss', factor=0.1, patience=5, verbose=self.verbose, 
-            min_delta=0.0001, cooldown=0, min_lr=1e-7
-        )
-
-        early_stop = keras.callbacks.EarlyStopping(monitor='loss', mode='min', verbose=self.verbose, patience=10)
-
-        # Save the model.
-        file_path = self.output_directory+'best_model'
-        model_checkpoint = keras.callbacks.ModelCheckpoint(filepath=file_path, monitor='loss', mode='min', save_weights_only=False,
-            save_best_only=True)
-
-        self.callbacks = [reduce_lr, early_stop, model_checkpoint]
-
-        return model
-
-    def fit(self, x_train, y_train, x_val=None, y_val=None):
-        if not tf.test.is_gpu_available:
-            print('GPU is not available')
-            # exit()        
-        batch_size = 8
-        nb_epochs = 1500
-
-        if not x_val is None:
-            self.model.fit(x_train, y_train, batch_size=batch_size, epochs=nb_epochs,
-                              verbose=self.verbose>1, validation_data=(x_val, y_val), callbacks=self.callbacks)
-        else:
-            self.model.fit(x_train, y_train, batch_size=batch_size, epochs=nb_epochs,
-                              verbose=self.verbose>1, callbacks=self.callbacks)
-
-        self.model.save(self.output_directory + 'last_model',include_optimizer=False)
-        keras.backend.clear_session()
-
-    def predict(self, x_test):
-        model_path = self.output_directory + 'best_model'
-        model = keras.models.load_model(model_path)
-        y_pred = model.predict(x_test)
-        return y_pred
-
-
 # Get the wav data
 def get_wav_data(data, recordings, padding=400, fs=4000):
     locations = get_locations(data)
@@ -304,6 +162,40 @@ def get_wav_data(data, recordings, padding=400, fs=4000):
     return recording_features   
 
 
+# Load data for training or test
+def get_data(classes, patient_files, pad_length, data_folder, get_training_func):
+    num_patient_files = len(patient_files)
+    num_classes = len(classes)
+    features = list()
+    recordings = list()
+    labels = list()
+
+    for i in range(num_patient_files):
+        # Load the current patient data and recordings.
+        current_patient_data = load_patient_data(patient_files[i])
+        current_recordings = load_recordings(data_folder, current_patient_data)
+
+        # Extract features.
+        current_recording = get_training_func(current_patient_data, current_recordings, pad_length)
+        recording = current_recording
+        recording = np.reshape(current_recording, (1, 128, pad_length, 5))
+        recordings.append(recording)
+        # print(recording)
+        current_features = get_features(current_patient_data, current_recordings)
+        features.append(current_features)
+
+        # Extract labels and use one-hot encoding.
+        current_labels = np.zeros(num_classes, dtype=int)
+        label = get_label(current_patient_data)
+        if label in classes:
+            j = classes.index(label)
+            current_labels[j] = 1
+        labels.append(current_labels)
+    recordings = np.vstack(recordings)
+    features = np.vstack(features)
+    labels = np.vstack(labels)
+    return recordings,features,labels
+
 
 # Training with RESNET+MLP
 def training_resnet_mlp(data_folder, model_folder, verbose=1):
@@ -318,48 +210,74 @@ def training_resnet_mlp(data_folder, model_folder, verbose=1):
     if num_patient_files==0:
         raise Exception('No data was provided.')
 
-    PAD_LENGTH = 256
-
     # # Extract the features and labels.
     if verbose >= 1:
         print('Extracting features and labels from the Challenge data...')
+    
+    PAD_LENGTH = 256
+
+    random_seed = 30
+    random.seed(random_seed)
+    random.shuffle(patient_files)
+
+    # split data to train and test
+    split_qty = int(num_patient_files * 0.9)
+    patient_files_train, patient_files_validation = patient_files[:split_qty], patient_files[split_qty:]
 
     classes = ['Present', 'Unknown', 'Absent']
-    num_classes = len(classes)
-    features = list()
-    recordings = list()
-    labels = list()    
+    X_train1,X_train2,y_train = get_data(classes,patient_files=patient_files_train, pad_length=PAD_LENGTH, data_folder=data_folder, get_training_func=get_wav_data)
+    X_train = [X_train1,X_train2]
+    X_val1,X_val2,y_val = get_data(classes,patient_files=patient_files_validation, pad_length=PAD_LENGTH, data_folder=data_folder, get_training_func=get_wav_data)
+    X_val = [X_val1,X_val2]
+        
+    model = RESNET_MLP(3)
+    model.compile(loss=keras.losses.BinaryCrossentropy(), optimizer = keras.optimizers.Adam(), 
+            metrics=[keras.metrics.BinaryAccuracy(name='accuracy', dtype=None, threshold=0.5), 
+                    keras.metrics.Recall(name='Recall'), keras.metrics.Precision(name='Precision'), 
+                    keras.metrics.AUC(
+                        num_thresholds=200,
+                        curve="ROC",
+                        summation_method="interpolation",
+                        name="AUC",
+                        dtype=None,
+                        thresholds=None,
+                        multi_label=True,
+                        label_weights=None)
+                    ,F1_Score
+            ])
 
-    for i in range(num_patient_files):
-        # Load the current patient data and recordings.
-        current_patient_data = load_patient_data(patient_files[i])
-        current_recordings = load_recordings(data_folder, current_patient_data)
-
-        # Extract audio data.
-        current_recording = get_wav_data(current_patient_data, current_recordings, PAD_LENGTH)        
-        recording = current_recording
-        recording = np.reshape(current_recording, (1, 128, PAD_LENGTH, 5))
-        recordings.append(recording)
-
-        # Extract features.
-        current_features = get_features(current_patient_data, current_recordings)
-        features.append(current_features)
-
-        # Extract labels and use one-hot encoding.
-        current_labels = np.zeros(num_classes, dtype=int)
-        label = get_label(current_patient_data)
-        if label in classes:
-            j = classes.index(label)
-            current_labels[j] = 1
-        labels.append(current_labels)
-
-    recordings = np.vstack(recordings)
-    features = np.vstack(features)
-    labels = np.vstack(labels)
-    
-    X_train, X2_train, y_train = recordings, features, labels
-    
-    model = RESNET_MLP(model_folder, (128, PAD_LENGTH, 5), (26,), 3, verbose=verbose)
     if verbose >= 1:
         print('Training model...')    
-    model.fit([X_train, X2_train], y_train)
+    
+    batch_size = 8
+    nb_epochs = 1500
+    save_weights_only = False
+  
+    if not model_folder.endswith('/'):
+        model_folder = model_folder + '/'
+    
+    best_model_path = model_folder + 'best_model'
+    last_model_path = model_folder + 'last_model'
+
+    model_checkpoint = keras.callbacks.ModelCheckpoint(filepath=best_model_path, monitor='val_F1_Score', mode='max', save_best_only=True,
+        save_weights_only=save_weights_only, verbose=verbose)
+    reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='loss', verbose=verbose, patience=10)
+    early_stop = keras.callbacks.EarlyStopping(monitor='loss', mode='min', verbose=verbose, patience=15, restore_best_weights=True)        
+    
+    callbacks = [model_checkpoint, reduce_lr, early_stop]
+    
+    if X_val is None:
+        model.fit(X_train, y_train, batch_size=batch_size, epochs=nb_epochs,
+                            verbose=verbose, callbacks=callbacks)
+    else:
+        model.fit(X_train, y_train, batch_size=batch_size, epochs=nb_epochs,
+                            verbose=verbose, validation_data=(X_val, y_val), callbacks=callbacks)
+        
+    if (verbose >= 2):
+        model.summary() 
+
+    if save_weights_only == True:
+        model.save_weights(last_model_path)
+    else:
+        model.save(last_model_path)
+    
