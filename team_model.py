@@ -12,7 +12,7 @@ class RESNET_C(keras.Model):
     def __init__(self, include_top=False, nb_classes=1, feature_maps = 64):
         super(RESNET_C, self).__init__()
 
-        self.include_top = include_top
+        # self.include_top = include_top
 
         self.conv_11 = keras.layers.Conv2D(filters=feature_maps, kernel_size=8, padding='same')
         self.BN_11 = keras.layers.BatchNormalization()
@@ -64,7 +64,7 @@ class RESNET_C(keras.Model):
 
         self.global_pooling = keras.layers.GlobalAveragePooling2D(name='global_pooling')
 
-        self.classifier = keras.layers.Dense(nb_classes, activation='sigmoid', name='FC')
+        # self.classifier = keras.layers.Dense(nb_classes, activation='sigmoid', name='FC')
 
 
     def call(self, inputs):
@@ -123,8 +123,8 @@ class RESNET_C(keras.Model):
         b3 = self.relu_33(b3)
 
         out_layer = self.global_pooling(b3)
-        if self.include_top == True:
-            out_layer = self.classifier(out_layer)
+        # if self.include_top == True:
+        #     out_layer = self.classifier(out_layer)
 
         return out_layer
 

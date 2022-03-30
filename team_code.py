@@ -247,8 +247,8 @@ def training_resnet_mlp(data_folder, model_folder, verbose=1):
             ])
 
     if verbose >= 1:
-        print('Training model...')    
-    
+        print('Training model...')
+
     batch_size = 8
     nb_epochs = 1500
     save_weights_only = False
@@ -261,7 +261,7 @@ def training_resnet_mlp(data_folder, model_folder, verbose=1):
 
     model_checkpoint = keras.callbacks.ModelCheckpoint(filepath=best_model_path, monitor='val_F1_Score', mode='max', save_best_only=True,
         save_weights_only=save_weights_only, verbose=verbose)
-    reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='loss', verbose=verbose, patience=10)
+    reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='loss', verbose=verbose>=2, patience=10)
     early_stop = keras.callbacks.EarlyStopping(monitor='loss', mode='min', verbose=verbose, patience=15, restore_best_weights=True)        
     
     callbacks = [model_checkpoint, reduce_lr, early_stop]
