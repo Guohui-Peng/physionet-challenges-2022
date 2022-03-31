@@ -10,12 +10,12 @@
 ################################################################################
 
 from helper_code import *
-from team_model import *
 import numpy as np, scipy as sp, os
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 import tensorflow.keras as keras
 import tensorflow as tf
+import keras.backend as K
 import librosa
 import random
 import warnings
@@ -377,7 +377,7 @@ class RESNET_MLP(keras.Model):
         f1_val = 2*(precision*recall)/(precision+recall+K.epsilon())
         return f1_val
 
-        
+
 # Training with RESNET+MLP
 def training_resnet_mlp(data_folder, model_folder, verbose=1):
     # Find data files.
@@ -441,14 +441,14 @@ def training_resnet_mlp(data_folder, model_folder, verbose=1):
     last_model_path = model_folder + 'last_model'
 
     model_checkpoint = keras.callbacks.ModelCheckpoint(filepath=best_model_path, monitor='val_F1_Score', mode='max', save_best_only=True,
-        save_weights_only=save_weights_only, verbose=verbose)
+        save_weights_only=save_weights_only, verbose=None)
     reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='loss', verbose=verbose>=2, patience=10)
     early_stop = keras.callbacks.EarlyStopping(monitor='loss', mode='min', verbose=verbose, patience=15, restore_best_weights=True)        
     
     callbacks = [model_checkpoint, reduce_lr, early_stop]
     
     fit_verbose = 0
-    if verbose>1:
+    if verbose>=1:
         fit_verbose = 2
     if X_val is None:
         model.fit(X_train, y_train, batch_size=batch_size, epochs=nb_epochs,
