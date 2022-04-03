@@ -38,9 +38,9 @@ def train_challenge_model(data_folder, model_folder, verbose):
 # Load your trained model. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
 def load_challenge_model(model_folder, verbose):    
-    my_model_folder = os.path.join(model_folder, '/best_model')
+    my_model_folder = os.path.join(model_folder, 'best_model')
     
-    new_model = RESNET_MLP(input_shape=[(128,PAD_LENGTH,3),(26,)],nb_classes=3,verbose=verbose).build_model()
+    new_model = RESNET_MLP(input_shape=[(128,PAD_LENGTH,5),(26,)],nb_classes=3,verbose=verbose).build_model()
     new_model.load_weights(my_model_folder).expect_partial()
     return new_model
 
@@ -50,7 +50,7 @@ def run_challenge_model(model, data, recordings, verbose):
     # Load features.
     current_recording = get_wav_data(data, recordings, PAD_LENGTH)
     current_recording = np.asarray(current_recording, dtype=np.float32)
-    current_recording = np.reshape(current_recording, (1, current_recording.shape[0], current_recording.shape[1], current_recording.shape[2]))    
+    current_recording = np.reshape(current_recording, (1, 128, PAD_LENGTH, 5))    
    
     current_features = get_features(data, recordings)
     current_features = np.reshape(current_features, (1, len(current_features))) 
@@ -286,13 +286,13 @@ class RESNET_MLP:
 
     def build_model(self):
         input_a = keras.layers.Input(self.input_shape_a)
-        resnet = RESNET_C(input_shape=self.input_shape_a, verbose=0, include_top=False).create_model()(input_a)
+        resnet = RESNET_C(input_shape=self.input_shape_a, verbose=0).create_model()(input_a)
         model_a = keras.Model(inputs=input_a, outputs=resnet)
 
         input_b = keras.layers.Input(self.input_shape_b)
         mlp = keras.layers.Dense(54, activation='relu', name='MLP_Dense1')(input_b)
         mlp = keras.layers.Dense(4, activation='sigmoid', name='MLP_Dense2')(mlp)
-        mlp = keras.layers.Dropout(0.3)
+        mlp = keras.layers.Dropout(0.3)(mlp)
         model_b = keras.Model(inputs=input_b, outputs=mlp)
 
         combined = keras.layers.concatenate([model_a.output, model_b.output])
