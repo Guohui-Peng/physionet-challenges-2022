@@ -26,7 +26,7 @@ warnings.filterwarnings("ignore")
 # Required functions. Edit these functions to add your code, but do not change the arguments.
 #
 ################################################################################
-
+PAD_LENGTH = 256
 # Train your model.
 def train_challenge_model(data_folder, model_folder, verbose):
 
@@ -38,34 +38,19 @@ def train_challenge_model(data_folder, model_folder, verbose):
 # Load your trained model. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
 def load_challenge_model(model_folder, verbose):    
-    my_model_folder = model_folder + '/best_model'    
-    # new_model = keras.models.load_model(my_model_folder)
-    new_model = RESNET_MLP(3)
-    new_model.compile(loss=keras.losses.BinaryCrossentropy(), optimizer = keras.optimizers.Adam(), 
-            metrics=[keras.metrics.BinaryAccuracy(name='accuracy', dtype=None, threshold=0.5), 
-                    keras.metrics.Recall(name='Recall'), keras.metrics.Precision(name='Precision'), 
-                    keras.metrics.AUC(
-                        num_thresholds=200,
-                        curve="ROC",
-                        summation_method="interpolation",
-                        name="AUC",
-                        dtype=None,
-                        thresholds=None,
-                        multi_label=True,
-                        label_weights=None)
-                    ,new_model.F1_Score
-            ])
+    my_model_folder = os.path.join(model_folder, '/best_model')
+    
+    new_model = RESNET_MLP(input_shape=[(128,PAD_LENGTH,3),(26,)],nb_classes=3,verbose=verbose).build_model()
     new_model.load_weights(my_model_folder).expect_partial()
     return new_model
 
 # Run your trained model. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
-def run_challenge_model(model, data, recordings, verbose):
-    PAD_LENGTH = 256
+def run_challenge_model(model, data, recordings, verbose):    
     # Load features.
     current_recording = get_wav_data(data, recordings, PAD_LENGTH)
     current_recording = np.asarray(current_recording, dtype=np.float32)
-    current_recording = np.reshape(current_recording, (1, 128, PAD_LENGTH, 5))    
+    current_recording = np.reshape(current_recording, (1, current_recording.shape[0], current_recording.shape[1], current_recording.shape[2]))    
    
     current_features = get_features(data, recordings)
     current_features = np.reshape(current_features, (1, len(current_features))) 
@@ -214,69 +199,36 @@ def get_data(classes, patient_files, pad_length, data_folder, get_training_func)
     return recordings,features,labels
 
 
-# Modified ResNet for challenge
-class RESNET_C(keras.Model):
-
-    def __init__(self, include_top=False, nb_classes=1, feature_maps = 64):
-        super(RESNET_C, self).__init__()
-
-        # self.include_top = include_top
-
-        self.conv_11 = keras.layers.Conv2D(filters=feature_maps, kernel_size=8, padding='same')
+################################################################################
+#
+# Models
+#
+################################################################################
+class RESNET_Block(keras.layers.Layer):
+    """
+    Custom ResNet Block
+    """
+    def __init__(self, filters=64, **kwargs):
+        super(RESNET_Block,self).__init__(**kwargs)
+        self.filters = filters
+        self.conv_11 = keras.layers.Conv2D(filters=filters, kernel_size=8, padding='same')
         self.BN_11 = keras.layers.BatchNormalization()
         self.relu_11 = keras.layers.Activation("relu")
 
-        self.conv_12 = keras.layers.Conv2D(filters=feature_maps, kernel_size=5, padding='same')
+        self.conv_12 = keras.layers.Conv2D(filters=filters, kernel_size=5, padding='same')
         self.BN_12 = keras.layers.BatchNormalization()
         self.relu_12 = keras.layers.Activation("relu")
 
-        self.conv_13 = keras.layers.Conv2D(filters=feature_maps, kernel_size=3, padding='same')
+        self.conv_13 = keras.layers.Conv2D(filters=filters, kernel_size=3, padding='same')
         self.BN_13 = keras.layers.BatchNormalization()
         self.relu_13 = keras.layers.Activation("relu")
 
-        self.conv_1e = keras.layers.Conv2D(filters=feature_maps, kernel_size=1, padding='same')
+        self.conv_1e = keras.layers.Conv2D(filters=filters, kernel_size=1, padding='same')
         self.BN_1e = keras.layers.BatchNormalization()
         self.add_1 = keras.layers.add
 
-        self.conv_21 = keras.layers.Conv2D(filters=feature_maps * 2, kernel_size=8, padding='same')
-        self.BN_21 = keras.layers.BatchNormalization()
-        self.relu_21 = keras.layers.Activation("relu")
-
-        self.conv_22 = keras.layers.Conv2D(filters=feature_maps * 2, kernel_size=5, padding='same')
-        self.BN_22 = keras.layers.BatchNormalization()
-        self.relu_22 = keras.layers.Activation("relu")
-
-        self.conv_23 = keras.layers.Conv2D(filters=feature_maps * 2, kernel_size=3, padding='same')
-        self.BN_23 = keras.layers.BatchNormalization()
-        self.relu_23 = keras.layers.Activation("relu")
-
-        self.conv_2e = keras.layers.Conv2D(filters=feature_maps * 2, kernel_size=1, padding='same')
-        self.BN_2e = keras.layers.BatchNormalization()
-        self.add_2 = keras.layers.add
-
-        self.conv_31 = keras.layers.Conv2D(filters=feature_maps * 2, kernel_size=8, padding='same')
-        self.BN_31 = keras.layers.BatchNormalization()
-        self.relu_31 = keras.layers.Activation("relu")
-
-        self.conv_32 = keras.layers.Conv2D(filters=feature_maps * 2, kernel_size=5, padding='same')
-        self.BN_32 = keras.layers.BatchNormalization()
-        self.relu_32 = keras.layers.Activation("relu")
-
-        self.conv_33 = keras.layers.Conv2D(filters=feature_maps * 2, kernel_size=3, padding='same')
-        self.BN_33 = keras.layers.BatchNormalization()
-        self.relu_33 = keras.layers.Activation("relu")
-        self.add_3 = keras.layers.add
- 
-        # self.conv_3e = keras.layers.Conv2D(filters=feature_maps * 2, kernel_size=1, padding='same')
-        self.BN_3e = keras.layers.BatchNormalization()
-
-        self.global_pooling = keras.layers.GlobalAveragePooling2D(name='global_pooling')
-
-        # self.classifier = keras.layers.Dense(nb_classes, activation='sigmoid', name='FC')
-
-
-    def call(self, inputs):
-        # Block 1        
+    def __call__(self, inputs):
+        # Block
         x11 = self.conv_11(inputs)
         x11 = self.BN_11(x11)
         x11 = self.relu_11(x11)
@@ -293,93 +245,78 @@ class RESNET_C(keras.Model):
 
         b1 = self.add_1([e1, x13])
         b1 = self.relu_13(b1)
+        return b1
 
-        # Block 2
-        x21 = self.conv_21(b1)
-        x21 = self.BN_21(x21)
-        x21 = self.relu_21(x21)
+    def get_config(self):
+        config = super(RESNET_Block, self).get_config()
+        config.update({"filters": self.filters})
+        return config
 
-        x22 = self.conv_22(x21)
-        x22 = self.BN_22(x22)
-        x22 = self.relu_22(x22)
 
-        x23 = self.conv_23(x22)
-        x23 = self.BN_23(x23)
+class RESNET_C:
+    """
+    ResNet for challenge
+    """
+    def __init__(self, input_shape, verbose=1, filters=64):
+        self.input_shape = input_shape
+        self.filters = filters
+        self.verbose = verbose
+        
+    def create_model(self):
+        input_layer = keras.layers.Input(self.input_shape)
 
-        e2 = self.conv_2e(b1)
-        e2 = self.BN_2e(e2)
+        block_1 = RESNET_Block(self.filters)(input_layer)
+        block_2 = RESNET_Block(self.filters*2)(block_1)
+        block_3 = RESNET_Block(self.filters*2)(block_2)
 
-        b2 = self.add_2([e2, x23])
-        b2 = self.relu_23(b2)
+        output_layer = keras.layers.GlobalAveragePooling2D()(block_3)
 
-        # Block 3
-        x31 = self.conv_31(b2)
-        x31 = self.BN_31(x31)
-        x31 = self.relu_31(x31)
-
-        x32 = self.conv_32(x31)
-        x32 = self.BN_32(x32)
-        x32 = self.relu_32(x32)
-
-        x33 = self.conv_33(x32)
-        x33 = self.BN_33(x33)
-
-        # e3 = self.conv_3e(b2)
-        e3 = self.BN_3e(b2)
-
-        b3 = self.add_3([e3, x33])
-        b3 = self.relu_33(b3)
-
-        out_layer = self.global_pooling(b3)
-        # if self.include_top == True:
-        #     out_layer = self.classifier(out_layer)
-
-        return out_layer
+        model = keras.models.Model(inputs=input_layer, outputs=output_layer)
+        return model
 
 
 # ResNet with MLP
-class RESNET_MLP(keras.Model):
-    def __init__(self, nb_classes):
-        super(RESNET_MLP, self).__init__()
+class RESNET_MLP:
+    def __init__(self, input_shape, nb_classes, verbose=2):
+        self.input_shape_a, self.input_shape_b = input_shape
+        self.nb_classes = nb_classes
+        self.verbose = verbose
 
-        # Layers
-        self.resnet = RESNET_C()
+        # self.model = self.build_model()
 
-        self.dense_1 = keras.layers.Dense(54, activation='relu')
-        self.dense_2 = keras.layers.Dense(4, activation='sigmoid')
+    def build_model(self):
+        input_a = keras.layers.Input(self.input_shape_a)
+        resnet = RESNET_C(input_shape=self.input_shape_a, verbose=0, include_top=False).create_model()(input_a)
+        model_a = keras.Model(inputs=input_a, outputs=resnet)
 
-        self.concatenate = keras.layers.concatenate
+        input_b = keras.layers.Input(self.input_shape_b)
+        mlp = keras.layers.Dense(54, activation='relu', name='MLP_Dense1')(input_b)
+        mlp = keras.layers.Dense(4, activation='sigmoid', name='MLP_Dense2')(mlp)
+        mlp = keras.layers.Dropout(0.3)
+        model_b = keras.Model(inputs=input_b, outputs=mlp)
 
-        self.classifier = keras.layers.Dense(nb_classes, activation='sigmoid', name='FC')
+        combined = keras.layers.concatenate([model_a.output, model_b.output])
+        output_layer = keras.layers.Dense(self.nb_classes, activation='sigmoid', name='FC')(combined)
 
-    def call(self, inputs):
-        input_a, input_b = inputs
+        model = keras.Model(inputs=[input_a,input_b], outputs=output_layer)
 
-        resnet = self.resnet(input_a)
+        model.compile(loss=keras.losses.BinaryCrossentropy(), optimizer = keras.optimizers.Adam(), 
+            metrics=[keras.metrics.BinaryAccuracy(name='accuracy', dtype=None, threshold=0.5), 
+                    keras.metrics.Recall(name='Recall'), keras.metrics.Precision(name='Precision'),
+                    keras.metrics.AUC(curve="ROC", name="AUROC"), 
+                    keras.metrics.AUC(curve="PR", name="AUPRC")
+            ])
 
-        mlp = self.dense_1(input_b)
-        mlp = self.dense_2(mlp)
-
-        combined = self.concatenate([resnet, mlp])
-        return self.classifier(combined)
-
-
-    @tf.function
-    def F1_Score(self, y_true, y_pred):
-        """
-        Calculate F1 score
-        """
-        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
-        possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
-        predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
-        precision = true_positives / (predicted_positives + K.epsilon())
-        recall = true_positives / (possible_positives + K.epsilon())
-        f1_val = 2*(precision*recall)/(precision+recall+K.epsilon())
-        return f1_val
+        if self.verbose == 2:
+            print(model.summary())
+        
+        return model
 
 
-# Training with RESNET+MLP
 def training_resnet_mlp(data_folder, model_folder, verbose=1):
+    """
+    Training with RESNET+MLP
+    """
     # Find data files.
     if verbose >= 1:
         print('Finding data files...')
@@ -395,73 +332,37 @@ def training_resnet_mlp(data_folder, model_folder, verbose=1):
     if verbose >= 1:
         print('Extracting features and labels from the Challenge data...')
     
-    PAD_LENGTH = 256
-
-    random_seed = 30
-    random.seed(random_seed)
-    random.shuffle(patient_files)
-
-    # split data to train and test
-    split_qty = int(num_patient_files * 0.9)
-    patient_files_train, patient_files_validation = patient_files[:split_qty], patient_files[split_qty:]
+    batch_size = 8
+    nb_epochs = 1500
 
     classes = ['Present', 'Unknown', 'Absent']
-    X_train1,X_train2,y_train = get_data(classes,patient_files=patient_files_train, pad_length=PAD_LENGTH, data_folder=data_folder, get_training_func=get_wav_data)
+    X_train1,X_train2,y_train = get_data(classes,patient_files=patient_files, pad_length=PAD_LENGTH, data_folder=data_folder, get_training_func=get_wav_data)
     X_train = [X_train1,X_train2]
-    X_val1,X_val2,y_val = get_data(classes,patient_files=patient_files_validation, pad_length=PAD_LENGTH, data_folder=data_folder, get_training_func=get_wav_data)
-    X_val = [X_val1,X_val2]
         
-    model = RESNET_MLP(3)
-    model.compile(loss=keras.losses.BinaryCrossentropy(), optimizer = keras.optimizers.Adam(), 
-            metrics=[keras.metrics.BinaryAccuracy(name='accuracy', dtype=None, threshold=0.5), 
-                    keras.metrics.Recall(name='Recall'), keras.metrics.Precision(name='Precision'), 
-                    keras.metrics.AUC(
-                        num_thresholds=200,
-                        curve="ROC",
-                        summation_method="interpolation",
-                        name="AUC",
-                        dtype=None,
-                        thresholds=None,
-                        multi_label=True,
-                        label_weights=None)
-                    ,model.F1_Score
-            ])
+    model = RESNET_MLP(input_shape=[(128,PAD_LENGTH,5),(26,)], nb_classes=3, verbose=verbose).build_model()
 
     if verbose >= 1:
         print('Training model...')
-
-    batch_size = 8
-    nb_epochs = 1500
-    save_weights_only = True
   
     if not model_folder.endswith('/'):
         model_folder = model_folder + '/'
     
-    best_model_path = model_folder + 'best_model'
-    last_model_path = model_folder + 'last_model'
+    best_model_path = os.path.join(model_folder,'best_model')
+    last_model_path = os.path.join(model_folder,'last_model')
 
-    model_checkpoint = keras.callbacks.ModelCheckpoint(filepath=best_model_path, monitor='val_F1_Score', mode='max', save_best_only=True,
-        save_weights_only=save_weights_only, verbose=0)
+    model_checkpoint = keras.callbacks.ModelCheckpoint(filepath=best_model_path, monitor='AUPRC', mode='max', save_best_only=True,
+        save_weights_only=True, verbose=0)
     reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='loss', verbose=verbose>=2, patience=10)
-    early_stop = keras.callbacks.EarlyStopping(monitor='loss', mode='min', verbose=verbose, patience=15, restore_best_weights=True)        
+    early_stop = keras.callbacks.EarlyStopping(monitor='loss', mode='min', verbose=verbose, patience=20, restore_best_weights=True)        
     
     callbacks = [model_checkpoint, reduce_lr, early_stop]
     
-    fit_verbose = 0
-    if verbose>=1:
-        fit_verbose = 2
-    if X_val is None:
-        model.fit(X_train, y_train, batch_size=batch_size, epochs=nb_epochs,
+    fit_verbose = 1 if verbose>=1 else 0
+    model.fit(X_train, y_train, batch_size=batch_size, epochs=nb_epochs,
                             verbose=fit_verbose, callbacks=callbacks)
-    else:
-        model.fit(X_train, y_train, batch_size=batch_size, epochs=nb_epochs,
-                            verbose=fit_verbose, validation_data=(X_val, y_val), callbacks=callbacks)
-        
+    
     if (verbose >= 2):
         model.summary() 
 
-    if save_weights_only == True:
-        model.save_weights(last_model_path)
-    else:
-        model.save(last_model_path)
+    model.save_weights(last_model_path)
     
