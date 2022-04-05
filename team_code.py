@@ -26,7 +26,7 @@ warnings.filterwarnings("ignore")
 # Required functions. Edit these functions to add your code, but do not change the arguments.
 #
 ################################################################################
-PAD_LENGTH = 256
+PAD_LENGTH = 400
 # Train your model.
 def train_challenge_model(data_folder, model_folder, verbose):
 
@@ -38,7 +38,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
 # Load your trained model. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
 def load_challenge_model(model_folder, verbose):    
-    my_model_folder = os.path.join(model_folder, 'best_model')
+    my_model_folder = os.path.join(model_folder, 'last_model')
     
     new_model = RESNET_MLP(input_shape=[(128,PAD_LENGTH,5),(26,)],nb_classes=3,verbose=verbose).build_model()
     new_model.load_weights(my_model_folder).expect_partial()
@@ -152,7 +152,7 @@ def get_wav_data(data, recordings, padding=400, fs=4000):
                     if r[j] == 0:
                         record = recordings[i] / float(tf.int16.max)
                         # Log-Mel Spectrogram特征
-                        record = librosa.feature.melspectrogram(record, sr=1000, n_fft=1024, hop_length=512, n_mels=128)
+                        record = librosa.feature.melspectrogram(record, sr=fs, n_fft=2048, hop_length=1024, n_mels=128)
                         record = librosa.power_to_db(record)
                         record = keras.preprocessing.sequence.pad_sequences(record, maxlen=padding, truncating='post',padding="post",dtype=float)
                         recording_features.append(record)
