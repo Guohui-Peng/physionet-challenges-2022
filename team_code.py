@@ -26,7 +26,7 @@ warnings.filterwarnings("ignore")
 # Required functions. Edit these functions to add your code, but do not change the arguments.
 #
 ################################################################################
-PAD_LENGTH = 400
+PAD_LENGTH = 256
 # Train your model.
 def train_challenge_model(data_folder, model_folder, verbose):
 
