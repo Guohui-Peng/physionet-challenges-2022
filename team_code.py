@@ -38,7 +38,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
 # Load your trained model. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
 def load_challenge_model(model_folder, verbose):    
-    my_model_folder = os.path.join(model_folder, 'best_model')
+    my_model_folder = os.path.join(model_folder, 'last_model')
     
     new_model = RESNET_MLP(input_shape=[(128,PAD_LENGTH,5),(26,)],nb_classes=3,verbose=verbose).build_model()
     new_model.load_weights(my_model_folder).expect_partial()
