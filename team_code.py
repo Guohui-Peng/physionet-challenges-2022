@@ -414,7 +414,7 @@ def training_resnet_mlp(data_folder, model_folder, verbose=1):
     best_model_path = os.path.join(model_folder,'best_model')
     last_model_path = os.path.join(model_folder,'last_model')
 
-    model_checkpoint = keras.callbacks.ModelCheckpoint(filepath=best_model_path, monitor='val_AUPRC', mode='max', save_best_only=True,
+    model_checkpoint = keras.callbacks.ModelCheckpoint(filepath=best_model_path, monitor='val_loss', mode='min', save_best_only=True,
         save_weights_only=True, verbose=0)
     reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', verbose=verbose>=2, patience=10)
     early_stop = keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', verbose=verbose, patience=20, restore_best_weights=True)        
