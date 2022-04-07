@@ -37,8 +37,8 @@ def train_challenge_model(data_folder, model_folder, verbose):
 
 # Load your trained model. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
-def load_challenge_model(model_folder, verbose):    
-    my_model_folder = os.path.join(model_folder, 'last_model')
+def load_challenge_model(model_folder, verbose):
+    my_model_folder = os.path.join(model_folder, 'best_model')
     
     new_model = RESNET_MLP(input_shape=[(128,PAD_LENGTH,5),(26,)],nb_classes=3,verbose=verbose).build_model()
     new_model.load_weights(my_model_folder).expect_partial()
@@ -163,6 +163,59 @@ def get_wav_data(data, recordings, padding=400, fs=4000):
             recording_features.append(np.zeros((128, padding)))
     return recording_features   
 
+def get_murmur_locations(data):
+    label = 'nan'
+    for l in data.split('\n'):
+        if l.startswith('#Murmur locations:'):
+            try:
+                label = l.split(': ')[1]
+            except:
+                pass
+    if label is None:
+        raise ValueError('No label available. Is your code trying to load labels from the hidden data?')
+    return label
+
+# Get the wav data for training
+def get_wav_data_training(data, recordings, padding=400, fs=4000):
+    locations = get_locations(data)
+    
+    recording_locations = ['AV', 'MV', 'PV', 'TV', 'PhC']
+    num_recording_locations = len(recording_locations)
+
+    murmur_locations = get_murmur_locations(data)
+    has_murmur = not compare_strings(murmur_locations, 'nan')
+    m_locs = murmur_locations.split('+')
+    
+    recording_features = list()
+    num_locations = len(locations)
+    num_recordings = len(recordings)
+    if num_locations==num_recordings:
+        r = np.zeros((num_recording_locations, 1))
+        for i in range(num_locations):
+            for j in range(num_recording_locations):
+                if compare_strings(locations[i], recording_locations[j]) and np.size(recordings[i])>0:
+                    if r[j] == 0:
+                        if has_murmur: 
+                            if locations[i] in m_locs:
+                                record = recordings[i] / float(tf.int16.max)
+                                record = librosa.feature.melspectrogram(record, sr=1000, n_fft=1024, hop_length=512, n_mels=128)
+                                record = librosa.power_to_db(record)
+                                record = keras.preprocessing.sequence.pad_sequences(record, maxlen=padding, truncating='post',padding="post",dtype=float) 
+                            else:
+                                record = np.zeros((128, padding))
+                        else:
+                            record = recordings[i] / float(tf.int16.max)
+                            record = librosa.feature.melspectrogram(record, sr=1000, n_fft=1024, hop_length=512, n_mels=128)
+                            record = librosa.power_to_db(record)
+                            record = keras.preprocessing.sequence.pad_sequences(record, maxlen=padding, truncating='post',padding="post",dtype=float) 
+                        
+                        recording_features.append(record)
+                    r[j] = 1
+    num_recording_features = len(recording_features)
+    if num_recording_features < num_recording_locations:
+        for i in range(num_recording_locations-num_recording_features):
+            recording_features.append(np.zeros((128, padding)))
+    return recording_features
 
 # Load data for training or test
 def get_data(classes, patient_files, pad_length, data_folder, get_training_func):
@@ -211,15 +264,15 @@ class RESNET_Block(keras.layers.Layer):
     def __init__(self, filters=64, **kwargs):
         super(RESNET_Block,self).__init__(**kwargs)
         self.filters = filters
-        self.conv_11 = keras.layers.Conv2D(filters=filters, kernel_size=(1,8), padding='same')
+        self.conv_11 = keras.layers.Conv2D(filters=filters, kernel_size=8, padding='same')
         self.BN_11 = keras.layers.BatchNormalization()
         self.relu_11 = keras.layers.Activation("relu")
 
-        self.conv_12 = keras.layers.Conv2D(filters=filters, kernel_size=(1,5), padding='same')
+        self.conv_12 = keras.layers.Conv2D(filters=filters, kernel_size=5, padding='same')
         self.BN_12 = keras.layers.BatchNormalization()
         self.relu_12 = keras.layers.Activation("relu")
 
-        self.conv_13 = keras.layers.Conv2D(filters=filters, kernel_size=(1,3), padding='same')
+        self.conv_13 = keras.layers.Conv2D(filters=filters, kernel_size=3, padding='same')
         self.BN_13 = keras.layers.BatchNormalization()
         self.relu_13 = keras.layers.Activation("relu")
 
@@ -336,8 +389,19 @@ def training_resnet_mlp(data_folder, model_folder, verbose=1):
     nb_epochs = 1500
 
     classes = ['Present', 'Unknown', 'Absent']
-    X_train1,X_train2,y_train = get_data(classes,patient_files=patient_files, pad_length=PAD_LENGTH, data_folder=data_folder, get_training_func=get_wav_data)
+    random_seed = 30
+    random.seed(random_seed)
+    random.shuffle(patient_files)
+
+    # split data to train and test
+    split_qty = int(num_patient_files * 0.9)
+    patient_files_train, patient_files_validation = patient_files[:split_qty], patient_files[split_qty:]
+
+    X_train1,X_train2,y_train = get_data(classes,patient_files=patient_files_train, pad_length=PAD_LENGTH, data_folder=data_folder, get_training_func=get_wav_data_training)
     X_train = [X_train1,X_train2]
+
+    X_val1,X_val2,y_val = get_data(classes,patient_files=patient_files_validation, pad_length=PAD_LENGTH, data_folder=data_folder, get_training_func=get_wav_data)
+    X_val = [X_val1,X_val2]
         
     model = RESNET_MLP(input_shape=[(128,PAD_LENGTH,5),(26,)], nb_classes=3, verbose=verbose).build_model()
 
@@ -350,15 +414,15 @@ def training_resnet_mlp(data_folder, model_folder, verbose=1):
     best_model_path = os.path.join(model_folder,'best_model')
     last_model_path = os.path.join(model_folder,'last_model')
 
-    model_checkpoint = keras.callbacks.ModelCheckpoint(filepath=best_model_path, monitor='AUPRC', mode='max', save_best_only=True,
+    model_checkpoint = keras.callbacks.ModelCheckpoint(filepath=best_model_path, monitor='val_AUPRC', mode='max', save_best_only=True,
         save_weights_only=True, verbose=0)
-    reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='loss', verbose=verbose>=2, patience=10)
-    early_stop = keras.callbacks.EarlyStopping(monitor='loss', mode='min', verbose=verbose, patience=20, restore_best_weights=True)        
+    reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', verbose=verbose>=2, patience=10)
+    early_stop = keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', verbose=verbose, patience=20, restore_best_weights=True)        
     
     callbacks = [model_checkpoint, reduce_lr, early_stop]
     
     fit_verbose = 1 if verbose>=1 else 0
-    model.fit(X_train, y_train, batch_size=batch_size, epochs=nb_epochs,
+    model.fit(X_train, y_train, batch_size=batch_size, epochs=nb_epochs, validation_data=(X_val, y_val),
                             verbose=fit_verbose, callbacks=callbacks)
     
     if (verbose >= 2):
