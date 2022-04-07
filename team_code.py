@@ -38,7 +38,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
 # Load your trained model. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
 def load_challenge_model(model_folder, verbose):    
-    my_model_folder = os.path.join(model_folder, 'last_model')
+    my_model_folder = os.path.join(model_folder, 'best_model')
     
     new_model = RESNET_MLP(input_shape=[(128,PAD_LENGTH,5),(26,)],nb_classes=3,verbose=verbose).build_model()
     new_model.load_weights(my_model_folder).expect_partial()
@@ -211,15 +211,15 @@ class RESNET_Block(keras.layers.Layer):
     def __init__(self, filters=64, **kwargs):
         super(RESNET_Block,self).__init__(**kwargs)
         self.filters = filters
-        self.conv_11 = keras.layers.Conv2D(filters=filters, kernel_size=8, padding='same')
+        self.conv_11 = keras.layers.Conv2D(filters=filters, kernel_size=(1,8), padding='same')
         self.BN_11 = keras.layers.BatchNormalization()
         self.relu_11 = keras.layers.Activation("relu")
 
-        self.conv_12 = keras.layers.Conv2D(filters=filters, kernel_size=5, padding='same')
+        self.conv_12 = keras.layers.Conv2D(filters=filters, kernel_size=(1,5), padding='same')
         self.BN_12 = keras.layers.BatchNormalization()
         self.relu_12 = keras.layers.Activation("relu")
 
-        self.conv_13 = keras.layers.Conv2D(filters=filters, kernel_size=3, padding='same')
+        self.conv_13 = keras.layers.Conv2D(filters=filters, kernel_size=(1,3), padding='same')
         self.BN_13 = keras.layers.BatchNormalization()
         self.relu_13 = keras.layers.Activation("relu")
 
