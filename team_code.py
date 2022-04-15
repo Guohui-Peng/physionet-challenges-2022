@@ -18,8 +18,8 @@ import tensorflow as tf
 import keras.backend as K
 import librosa
 import random
-import warnings
-warnings.filterwarnings("ignore")
+# import warnings
+# warnings.filterwarnings("ignore")
 
 ################################################################################
 #
@@ -152,7 +152,7 @@ def get_wav_data(data, recordings, padding=400, fs=4000):
                     if r[j] == 0:
                         record = recordings[i] / float(tf.int16.max)
                         # Log-Mel Spectrogram特征
-                        record = librosa.feature.melspectrogram(record, sr=1000, n_fft=1024, hop_length=512, n_mels=128)
+                        record = librosa.feature.melspectrogram(y=record, sr=1000, n_fft=1024, hop_length=512, n_mels=128)
                         record = librosa.power_to_db(record)
                         record = keras.preprocessing.sequence.pad_sequences(record, maxlen=padding, truncating='post',padding="post",dtype=float)
                         recording_features.append(record)
