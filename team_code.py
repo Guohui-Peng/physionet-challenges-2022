@@ -10,7 +10,7 @@
 ################################################################################
 
 from helper_code import *
-import numpy as np, scipy as sp, os
+import numpy as np, scipy as sp, os, joblib
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 import tensorflow.keras as keras
@@ -18,6 +18,8 @@ import tensorflow as tf
 import keras.backend as K
 import librosa
 import random
+
+from sklearn.impute import SimpleImputer
 # import warnings
 # warnings.filterwarnings("ignore")
 
@@ -29,45 +31,161 @@ import random
 PAD_LENGTH = 256
 # Train your model.
 def train_challenge_model(data_folder, model_folder, verbose):
+    # Find data files.
+    if verbose >= 1:
+        print('Finding data files...')
 
-    training_resnet_mlp(data_folder, model_folder, verbose)
+    # Find the patient data files.
+    patient_files = find_patient_files(data_folder)
+    num_patient_files = len(patient_files)
+
+    if num_patient_files==0:
+        raise Exception('No data was provided.')
+
+    # Create a folder for the model if it does not already exist.
+    os.makedirs(model_folder, exist_ok=True)
+
+    # Extract the features and labels.
+    if verbose >= 1:
+        print('Extracting features and labels from the Challenge data...')
+
+    murmur_classes = ['Present', 'Unknown', 'Absent']
+    num_murmur_classes = len(murmur_classes)
+    outcome_classes = ['Abnormal', 'Normal']
+    num_outcome_classes = len(outcome_classes)
+
+    features = list()
+    murmurs = list()
+    outcomes = list()
+
+    for i in range(num_patient_files):
+        if verbose >= 2:
+            print('    {}/{}...'.format(i+1, num_patient_files))
+
+        # Load the current patient data and recordings.
+        current_patient_data = load_patient_data(patient_files[i])
+        current_recordings = load_recordings(data_folder, current_patient_data)
+
+        # Extract features.
+        current_features = get_features(current_patient_data, current_recordings)
+        features.append(current_features)
+
+        # Extract labels and use one-hot encoding.
+        current_murmur = np.zeros(num_murmur_classes, dtype=int)
+        murmur = get_murmur(current_patient_data)
+        if murmur in murmur_classes:
+            j = murmur_classes.index(murmur)
+            current_murmur[j] = 1
+        murmurs.append(current_murmur)
+
+        current_outcome = np.zeros(num_outcome_classes, dtype=int)
+        outcome = get_outcome(current_patient_data)
+        if outcome in outcome_classes:
+            j = outcome_classes.index(outcome)
+            current_outcome[j] = 1
+        outcomes.append(current_outcome)
+
+    features = np.vstack(features)
+    murmurs = np.vstack(murmurs)
+    outcomes = np.vstack(outcomes)
+
+    # Train the model.
+    if verbose >= 1:
+        print('Training model...')
+
+    # Define parameters for random forest classifier.
+    n_estimators   = 123  # Number of trees in the forest.
+    max_leaf_nodes = 45   # Maximum number of leaf nodes in each tree.
+    random_state   = 6789 # Random state; set for reproducibility.
+
+    imputer = SimpleImputer().fit(features)
+    features = imputer.transform(features)
+    murmur_classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, murmurs)
+    outcome_classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, outcomes)
+
+    # Save the model.
+    save_challenge_model(model_folder, imputer, murmur_classes, murmur_classifier, outcome_classes, outcome_classifier)
 
     if verbose >= 1:
         print('Done.')
+# def train_challenge_model(data_folder, model_folder, verbose):
+
+#     training_resnet_mlp(data_folder, model_folder, verbose)
+
+#     if verbose >= 1:
+#         print('Done.')
 
 # Load your trained model. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
 def load_challenge_model(model_folder, verbose):
-    my_model_folder = os.path.join(model_folder, 'best_model')
+    filename = os.path.join(model_folder, 'model.sav')
+    return joblib.load(filename)
+# def load_challenge_model(model_folder, verbose):
+#     my_model_folder = os.path.join(model_folder, 'best_model')
     
-    new_model = RESNET_MLP(input_shape=[(128,PAD_LENGTH,5),(26,)],nb_classes=3,verbose=verbose).build_model()
-    new_model.load_weights(my_model_folder).expect_partial()
-    return new_model
+#     new_model = RESNET_MLP(input_shape=[(128,PAD_LENGTH,5),(26,)],nb_classes=3,verbose=verbose).build_model()
+#     new_model.load_weights(my_model_folder).expect_partial()
+#     return new_model
 
 # Run your trained model. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
-def run_challenge_model(model, data, recordings, verbose):    
-    # Load features.
-    current_recording = get_wav_data(data, recordings, PAD_LENGTH)
-    current_recording = np.asarray(current_recording, dtype=np.float32)
-    current_recording = np.reshape(current_recording, (1, 128, PAD_LENGTH, 5))    
+# def run_challenge_model(model, data, recordings, verbose):    
+#     # Load features.
+#     current_recording = get_wav_data(data, recordings, PAD_LENGTH)
+#     current_recording = np.asarray(current_recording, dtype=np.float32)
+#     current_recording = np.reshape(current_recording, (1, 128, PAD_LENGTH, 5))    
    
-    current_features = get_features(data, recordings)
-    current_features = np.reshape(current_features, (1, len(current_features))) 
+#     current_features = get_features(data, recordings)
+#     current_features = np.reshape(current_features, (1, len(current_features))) 
     
-    pred = model.predict([current_recording, current_features])
+#     pred = model.predict([current_recording, current_features])
 
-    classes = ['Present', 'Unknown', 'Absent']
+#     classes = ['Present', 'Unknown', 'Absent']
+#     # Get classifier probabilities.
+#     pred_softmax = tf.nn.softmax(pred[0])
+#     pred_softmax = pred_softmax.numpy()
+#     probabilities = pred_softmax
+
+#     # Choose label with higher probability.
+#     labels = np.zeros(len(classes), dtype=np.int_)
+#     idx = np.argmax(pred_softmax)
+#     labels[idx] = 1
+    
+#     return classes, labels, probabilities
+# arguments of this function.
+def run_challenge_model(model, data, recordings, verbose):
+    imputer = model['imputer']
+    murmur_classes = model['murmur_classes']
+    murmur_classifier = model['murmur_classifier']
+    outcome_classes = model['outcome_classes']
+    outcome_classifier = model['outcome_classifier']
+
+    # Load features.
+    features = get_features(data, recordings)
+
+    # Impute missing data.
+    features = features.reshape(1, -1)
+    features = imputer.transform(features)
+
     # Get classifier probabilities.
-    pred_softmax = tf.nn.softmax(pred[0])
-    pred_softmax = pred_softmax.numpy()
-    probabilities = pred_softmax
+    murmur_probabilities = murmur_classifier.predict_proba(features)
+    murmur_probabilities = np.asarray(murmur_probabilities, dtype=np.float32)[:, 0, 1]
+    outcome_probabilities = outcome_classifier.predict_proba(features)
+    outcome_probabilities = np.asarray(outcome_probabilities, dtype=np.float32)[:, 0, 1]
 
-    # Choose label with higher probability.
-    labels = np.zeros(len(classes), dtype=np.int_)
-    idx = np.argmax(pred_softmax)
-    labels[idx] = 1
-    
+    # Choose label with highest probability.
+    murmur_labels = np.zeros(len(murmur_classes), dtype=np.int_)
+    idx = np.argmax(murmur_probabilities)
+    murmur_labels[idx] = 1
+    outcome_labels = np.zeros(len(outcome_classes), dtype=np.int_)
+    idx = np.argmax(outcome_probabilities)
+    outcome_labels[idx] = 1
+
+    # Concatenate classes, labels, and probabilities.
+    classes = murmur_classes + outcome_classes
+    labels = np.concatenate((murmur_labels, outcome_labels))
+    probabilities = np.concatenate((murmur_probabilities, outcome_probabilities))
+
     return classes, labels, probabilities
 
 ################################################################################
@@ -75,6 +193,12 @@ def run_challenge_model(model, data, recordings, verbose):
 # Optional functions. You can change or remove these functions and/or add new functions.
 #
 ################################################################################
+
+# Save your trained model.
+def save_challenge_model(model_folder, imputer, murmur_classes, murmur_classifier, outcome_classes, outcome_classifier):
+    d = {'imputer': imputer, 'murmur_classes': murmur_classes, 'murmur_classifier': murmur_classifier, 'outcome_classes': outcome_classes, 'outcome_classifier': outcome_classifier}
+    filename = os.path.join(model_folder, 'model.sav')
+    joblib.dump(d, filename, protocol=0)
 
 # Extract features from the data.
 def get_features(data, recordings):
@@ -130,7 +254,7 @@ def get_features(data, recordings):
     recording_features = recording_features.flatten()
 
     features = np.hstack(([age], sex_features, [height], [weight], [is_pregnant], recording_features))
-    features = np.nan_to_num(features)
+
     return np.asarray(features, dtype=np.float32)
 
 
@@ -241,7 +365,7 @@ def get_data(classes, patient_files, pad_length, data_folder, get_training_func)
 
         # Extract labels and use one-hot encoding.
         current_labels = np.zeros(num_classes, dtype=int)
-        label = get_label(current_patient_data)
+        label = get_murmur(current_patient_data)
         if label in classes:
             j = classes.index(label)
             current_labels[j] = 1
