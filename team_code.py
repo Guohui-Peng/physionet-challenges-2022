@@ -9,6 +9,7 @@
 #
 ################################################################################
 
+from requests import delete
 from helper_code import *
 import numpy as np, scipy as sp, os, joblib
 
@@ -17,7 +18,7 @@ import tensorflow.keras as keras
 import tensorflow as tf
 import keras.backend as K
 import librosa
-import random
+# import random
 
 from sklearn.impute import SimpleImputer
 # import warnings
@@ -109,8 +110,10 @@ def train_challenge_model(data_folder, model_folder, verbose):
     features = imputer.transform(features)
 
     # Models
-    m_model = Team_Model(model_folder=model_folder, filters=[64,64,64], verbose=verbose)
-    o_model = Team_Model(model_folder=model_folder, filters=[64,64,64], verbose=verbose)
+    m_model_folder = os.path.join(model_folder, 'murmur')
+    o_model_folder = os.path.join(model_folder, 'outcome')
+    m_model = Team_Model(model_folder=m_model_folder, filters=[64,64,64], verbose=verbose)
+    o_model = Team_Model(model_folder=o_model_folder, filters=[64,64,64], verbose=verbose)
     murmur_model = m_model.create_resnet_mlp(input_shape=[(128,PAD_LENGTH,5),(26,)], nb_classes=3)
     outcome_model = o_model.create_resnet_mlp(input_shape=[(128,PAD_LENGTH,5),(26,)], nb_classes=2)
     m_model.build_model(murmur_model)
@@ -132,8 +135,8 @@ def train_challenge_model(data_folder, model_folder, verbose):
     o_model.fit_(outcome_model, ds=o_ds, reduce_lr_patient=5,stop_patient=15, batch_size=batch_size,nb_epochs=nb_epochs,
                     reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='loss', checkpoint_mode='min')
 
-    murmur_classifier = murmur_model.get_weights()
-    outcome_classifier = outcome_model.get_weights()
+    murmur_classifier = m_model_folder
+    outcome_classifier = o_model_folder
 
     
     # murmur_classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, murmurs)
@@ -155,7 +158,21 @@ def train_challenge_model(data_folder, model_folder, verbose):
 # arguments of this function.
 def load_challenge_model(model_folder, verbose):
     filename = os.path.join(model_folder, 'model.sav')
-    return joblib.load(filename)
+    model = joblib.load(filename)
+    murmur_model_path = model['murmur_classifier']
+    outcome_model_path = model['outcome_classifier']
+    m_model_factory = Team_Model(model_folder=murmur_model_path, filters=[64,64,64], verbose=verbose)
+    o_model_factory = Team_Model(model_folder=outcome_model_path, filters=[64,64,64], verbose=verbose)
+    murmur_model = m_model_factory.create_resnet_mlp(input_shape=[(128,PAD_LENGTH,5),(26,)], nb_classes=3)
+    outcome_model = o_model_factory.create_resnet_mlp(input_shape=[(128,PAD_LENGTH,5),(26,)], nb_classes=2)
+    # Restore models
+    m_model_factory.build_model(murmur_model)
+    m_model = m_model_factory.load_best_weight(murmur_model)
+    o_model_factory.build_model(outcome_model)
+    o_model = o_model_factory.load_best_weight(outcome_model)
+    model['murmur_classifier'] = m_model
+    model['outcome_classifier'] = o_model
+    return model
 # def load_challenge_model(model_folder, verbose):
 #     my_model_folder = os.path.join(model_folder, 'best_model')
     
@@ -196,6 +213,10 @@ def run_challenge_model(model, data, recordings, verbose):
     outcome_classes = model['outcome_classes']
     outcome_classifier = model['outcome_classifier']
 
+    # Extract features.
+    current_recording = get_wav_data(data, recordings, padding=PAD_LENGTH)    
+    current_recording = np.reshape(current_recording, (1, 128, PAD_LENGTH, 5))    
+
     # Load features.
     features = get_features(data, recordings)
 
@@ -203,11 +224,20 @@ def run_challenge_model(model, data, recordings, verbose):
     features = features.reshape(1, -1)
     features = imputer.transform(features)
 
+    murmur_pred = murmur_classifier.predict([current_recording, features])
+    outcome_pred = outcome_classifier.predict([current_recording, features])
+
     # Get classifier probabilities.
-    murmur_probabilities = murmur_classifier.predict_proba(features)
-    murmur_probabilities = np.asarray(murmur_probabilities, dtype=np.float32)[:, 0, 1]
-    outcome_probabilities = outcome_classifier.predict_proba(features)
-    outcome_probabilities = np.asarray(outcome_probabilities, dtype=np.float32)[:, 0, 1]
+    murmur_probabilities = tf.nn.softmax(murmur_pred[0])    
+    murmur_probabilities = murmur_probabilities.numpy()
+    outcome_probabilities = tf.nn.softmax(outcome_pred[0])    
+    outcome_probabilities = outcome_probabilities.numpy()
+
+    # Get classifier probabilities.
+    # murmur_probabilities = murmur_classifier.predict_proba(features)
+    # murmur_probabilities = np.asarray(murmur_probabilities, dtype=np.float32)[:, 0, 1]
+    # outcome_probabilities = outcome_classifier.predict_proba(features)
+    # outcome_probabilities = np.asarray(outcome_probabilities, dtype=np.float32)[:, 0, 1]
 
     # Choose label with highest probability.
     murmur_labels = np.zeros(len(murmur_classes), dtype=np.int_)
@@ -561,70 +591,14 @@ class Team_Model:
 
         keras.backend.clear_session()
 
+    def load_best_weight(self, model:keras.Model):
+        model.load_weights(self.best_model_path).expect_partial()
+        return model
 
-def training_resnet_mlp(data_folder, model_folder, verbose=1):
-    """
-    Training with RESNET+MLP
-    """
-    # Find data files.
-    if verbose >= 1:
-        print('Finding data files...')
-    
-    # Find the patient data files.
-    patient_files = find_patient_files(data_folder)
-    num_patient_files = len(patient_files)
-    
-    if num_patient_files==0:
-        raise Exception('No data was provided.')
-
-    # # Extract the features and labels.
-    if verbose >= 1:
-        print('Extracting features and labels from the Challenge data...')
-    
-    batch_size = 8
-    nb_epochs = 1500
-
-    classes = ['Present', 'Unknown', 'Absent']
-    random_seed = 30
-    random.seed(random_seed)
-    random.shuffle(patient_files)
-
-    # split data to train and test
-    split_qty = int(num_patient_files * 0.9)
-    patient_files_train, patient_files_validation = patient_files[:split_qty], patient_files[split_qty:]
-
-    X_train1,X_train2,y_train = get_data(classes,patient_files=patient_files_train, pad_length=PAD_LENGTH, data_folder=data_folder, get_training_func=get_wav_data_training)
-    X_train = [X_train1,X_train2]
-
-    X_val1,X_val2,y_val = get_data(classes,patient_files=patient_files_validation, pad_length=PAD_LENGTH, data_folder=data_folder, get_training_func=get_wav_data)
-    X_val = [X_val1,X_val2]
-        
-    model = RESNET_MLP(input_shape=[(128,PAD_LENGTH,5),(26,)], nb_classes=3, verbose=verbose).build_model()
-
-    if verbose >= 1:
-        print('Training model...')
-  
-    if not model_folder.endswith('/'):
-        model_folder = model_folder + '/'
-    
-    best_model_path = os.path.join(model_folder,'best_model')
-    last_model_path = os.path.join(model_folder,'last_model')
-
-    model_checkpoint = keras.callbacks.ModelCheckpoint(filepath=best_model_path, monitor='val_loss', mode='min', save_best_only=True,
-        save_weights_only=True, verbose=0)
-    reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', verbose=verbose>=2, patience=10)
-    early_stop = keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', verbose=verbose, patience=20, restore_best_weights=True)        
-    
-    callbacks = [model_checkpoint, reduce_lr, early_stop]
-    
-    fit_verbose = 1 if verbose>=1 else 0
-    model.fit(X_train, y_train, batch_size=batch_size, epochs=nb_epochs, validation_data=(X_val, y_val),
-                            verbose=fit_verbose, callbacks=callbacks)
-    
-    if (verbose >= 2):
-        model.summary() 
-
-    model.save_weights(last_model_path)
+    def predict_(self, model:keras.Model, X):
+        model.load_weights(self.best_model_path).expect_partial()
+        pred = model.predict(X)
+        return pred
     
 
 if __name__ == '__main__':
