@@ -28,9 +28,13 @@ from sklearn.impute import SimpleImputer
 # Required functions. Edit these functions to add your code, but do not change the arguments.
 #
 ################################################################################
-PAD_LENGTH = 256
+PAD_LENGTH = 128
+
 # Train your model.
 def train_challenge_model(data_folder, model_folder, verbose):
+    batch_size = 16
+    nb_epochs = 300
+
     # Find data files.
     if verbose >= 1:
         print('Finding data files...')
@@ -55,6 +59,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
     num_outcome_classes = len(outcome_classes)
 
     features = list()
+    recordings = list()
     murmurs = list()
     outcomes = list()
 
@@ -65,6 +70,12 @@ def train_challenge_model(data_folder, model_folder, verbose):
         # Load the current patient data and recordings.
         current_patient_data = load_patient_data(patient_files[i])
         current_recordings = load_recordings(data_folder, current_patient_data)
+        
+        # Extract features.
+        current_recording = get_wav_data(current_patient_data, current_recordings, padding=PAD_LENGTH)
+        recording = current_recording
+        recording = np.reshape(current_recording, (1, 128, PAD_LENGTH, 5))
+        recordings.append(recording)
 
         # Extract features.
         current_features = get_features(current_patient_data, current_recordings)
@@ -85,6 +96,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
             current_outcome[j] = 1
         outcomes.append(current_outcome)
 
+    recordings = np.vstack(recordings)
     features = np.vstack(features)
     murmurs = np.vstack(murmurs)
     outcomes = np.vstack(outcomes)
@@ -93,15 +105,39 @@ def train_challenge_model(data_folder, model_folder, verbose):
     if verbose >= 1:
         print('Training model...')
 
-    # Define parameters for random forest classifier.
-    n_estimators   = 123  # Number of trees in the forest.
-    max_leaf_nodes = 45   # Maximum number of leaf nodes in each tree.
-    random_state   = 6789 # Random state; set for reproducibility.
-
     imputer = SimpleImputer().fit(features)
     features = imputer.transform(features)
-    murmur_classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, murmurs)
-    outcome_classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, outcomes)
+
+    # Models
+    m_model = Team_Model(model_folder=model_folder, filters=[64,64,64], verbose=verbose)
+    o_model = Team_Model(model_folder=model_folder, filters=[64,64,64], verbose=verbose)
+    murmur_model = m_model.create_resnet_mlp(input_shape=[(128,PAD_LENGTH,5),(26,)], nb_classes=3)
+    outcome_model = o_model.create_resnet_mlp(input_shape=[(128,PAD_LENGTH,5),(26,)], nb_classes=2)
+    m_model.build_model(murmur_model)
+    o_model.build_model(outcome_model)
+
+    # Dataset
+    X = tf.data.Dataset.from_tensor_slices((recordings,features))
+    murmur_y = tf.data.Dataset.from_tensor_slices(murmurs)
+    m_ds = tf.data.Dataset.zip((X, murmur_y))
+    outcome_y = tf.data.Dataset.from_tensor_slices(outcomes)
+    o_ds = tf.data.Dataset.zip((X, outcome_y))
+
+    m_ds = m_ds.batch(batch_size).prefetch(2)
+    o_ds = o_ds.batch(batch_size).prefetch(2)
+
+    # Training    
+    m_model.fit_(murmur_model, ds=m_ds, reduce_lr_patient=5,stop_patient=15, batch_size=batch_size,nb_epochs=nb_epochs,
+                    reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='loss', checkpoint_mode='min')
+    o_model.fit_(outcome_model, ds=o_ds, reduce_lr_patient=5,stop_patient=15, batch_size=batch_size,nb_epochs=nb_epochs,
+                    reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='loss', checkpoint_mode='min')
+
+    murmur_classifier = murmur_model.get_weights()
+    outcome_classifier = outcome_model.get_weights()
+
+    
+    # murmur_classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, murmurs)
+    # outcome_classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, outcomes)
 
     # Save the model.
     save_challenge_model(model_folder, imputer, murmur_classes, murmur_classifier, outcome_classes, outcome_classifier)
@@ -257,6 +293,10 @@ def get_features(data, recordings):
 
     return np.asarray(features, dtype=np.float32)
 
+def band_filter(original_signal, order, fc1,fc2, fs):
+    b, a = sp.signal.butter(N=order, Wn=[2*fc1/fs,2*fc2/fs], btype='bandpass')
+    new_signal = sp.signal.lfilter(b, a, original_signal)
+    return new_signal
 
 # Get the wav data
 def get_wav_data(data, recordings, padding=400, fs=4000):
@@ -275,9 +315,13 @@ def get_wav_data(data, recordings, padding=400, fs=4000):
                 if compare_strings(locations[i], recording_locations[j]) and np.size(recordings[i])>0:                    
                     if r[j] == 0:
                         record = recordings[i] / float(tf.int16.max)
-                        # Log-Mel Spectrogram特征
+                        record = band_filter(record, 2, 25, 200, fs)
+                        record = librosa.resample(record, orig_sr=fs, target_sr=1000)
                         record = librosa.feature.melspectrogram(y=record, sr=1000, n_fft=1024, hop_length=512, n_mels=128)
-                        record = librosa.power_to_db(record)
+                        record = librosa.power_to_db(record, ref=np.max)
+
+                        # record = librosa.feature.melspectrogram(y=record, sr=1000, n_fft=1024, hop_length=512, n_mels=128)
+                        # record = librosa.power_to_db(record)
                         record = keras.preprocessing.sequence.pad_sequences(record, maxlen=padding, truncating='post',padding="post",dtype=float)
                         recording_features.append(record)
                     r[j] = 1
@@ -385,22 +429,25 @@ class RESNET_Block(keras.layers.Layer):
     """
     Custom ResNet Block
     """
-    def __init__(self, filters=64, **kwargs):
+    def __init__(self, filters=[64, 64, 64], kernels=[8, 5, 3], **kwargs):
         super(RESNET_Block,self).__init__(**kwargs)
         self.filters = filters
-        self.conv_11 = keras.layers.Conv2D(filters=filters, kernel_size=8, padding='same')
+        self.kenels = kernels
+        [kenel1, kenel2, kenel3] = kernels
+        [filter1, filter2, filter3] = filters
+        self.conv_11 = keras.layers.Conv2D(filters=filter1, kernel_size=kenel1, padding='same')
         self.BN_11 = keras.layers.BatchNormalization()
-        self.relu_11 = keras.layers.Activation("relu")
+        self.relu_11 = keras.layers.Activation("relu")        
 
-        self.conv_12 = keras.layers.Conv2D(filters=filters, kernel_size=5, padding='same')
+        self.conv_12 = keras.layers.Conv2D(filters=filter2, kernel_size=kenel2, padding='same')
         self.BN_12 = keras.layers.BatchNormalization()
         self.relu_12 = keras.layers.Activation("relu")
 
-        self.conv_13 = keras.layers.Conv2D(filters=filters, kernel_size=3, padding='same')
+        self.conv_13 = keras.layers.Conv2D(filters=filter3, kernel_size=kenel3, padding='same')
         self.BN_13 = keras.layers.BatchNormalization()
         self.relu_13 = keras.layers.Activation("relu")
 
-        self.conv_1e = keras.layers.Conv2D(filters=filters, kernel_size=1, padding='same')
+        self.conv_1e = keras.layers.Conv2D(filters=filter3, kernel_size=1, padding='same')
         self.BN_1e = keras.layers.BatchNormalization()
         self.add_1 = keras.layers.add
 
@@ -427,56 +474,56 @@ class RESNET_Block(keras.layers.Layer):
     def get_config(self):
         config = super(RESNET_Block, self).get_config()
         config.update({"filters": self.filters})
+        config.update({"kenels": self.kenels})
         return config
 
-
-class RESNET_C:
-    """
-    ResNet for challenge
-    """
-    def __init__(self, input_shape, verbose=1, filters=64):
-        self.input_shape = input_shape
-        self.filters = filters
+# ResNet with MLP
+class Team_Model:
+    def __init__(self, verbose=2, filters=[64, 64, 64], model_folder='model'):
         self.verbose = verbose
-        
-    def create_model(self):
-        input_layer = keras.layers.Input(self.input_shape)
-
+        self.filters = filters
+        self.best_model_path = os.path.join(model_folder, 'best_model')
+        self.last_model_path = os.path.join(model_folder, 'last_model')      
+    
+    def create_resnet(self, input_shape, include_top=True, nb_classes=1, name='RESNET_C'):
+        input_layer = keras.layers.Input(input_shape)
         block_1 = RESNET_Block(self.filters)(input_layer)
-        block_2 = RESNET_Block(self.filters*2)(block_1)
-        block_3 = RESNET_Block(self.filters*2)(block_2)
+        block_2 = RESNET_Block([i*2 for i in self.filters])(block_1)
+        block_3 = RESNET_Block([i*2 for i in self.filters])(block_2)
 
         output_layer = keras.layers.GlobalAveragePooling2D()(block_3)
 
-        model = keras.models.Model(inputs=input_layer, outputs=output_layer)
+        if include_top == True:
+            output_layer = keras.layers.Dense(nb_classes, activation='sigmoid')(output_layer)
+
+        model = keras.models.Model(inputs=input_layer, outputs=output_layer, name=name)
         return model
 
+    def create_resnet_mlp(self, input_shape, nb_classes:int, name='RESNET_MLP_C', pre_training_model_path=None):
+        input_shape_a, input_shape_b = input_shape
+        input_a = keras.layers.Input(input_shape_a)
 
-# ResNet with MLP
-class RESNET_MLP:
-    def __init__(self, input_shape, nb_classes, verbose=2):
-        self.input_shape_a, self.input_shape_b = input_shape
-        self.nb_classes = nb_classes
-        self.verbose = verbose
-
-        # self.model = self.build_model()
-
-    def build_model(self):
-        input_a = keras.layers.Input(self.input_shape_a)
-        resnet = RESNET_C(input_shape=self.input_shape_a, verbose=0).create_model()(input_a)
+        resnet_model = self.create_resnet(input_shape=input_shape_a, include_top=False)
+        if pre_training_model_path is not None:
+            resnet_model.load_weights(pre_training_model_path).expect_partial()
+        
+        resnet = resnet_model(input_a)
         model_a = keras.Model(inputs=input_a, outputs=resnet)
 
-        input_b = keras.layers.Input(self.input_shape_b)
+        input_b = keras.layers.Input(input_shape_b)
         mlp = keras.layers.Dense(54, activation='relu', name='MLP_Dense1')(input_b)
         mlp = keras.layers.Dense(4, activation='sigmoid', name='MLP_Dense2')(mlp)
         mlp = keras.layers.Dropout(0.3)(mlp)
         model_b = keras.Model(inputs=input_b, outputs=mlp)
 
         combined = keras.layers.concatenate([model_a.output, model_b.output])
-        output_layer = keras.layers.Dense(self.nb_classes, activation='sigmoid', name='FC')(combined)
+        output_layer = keras.layers.Dense(nb_classes, activation='sigmoid', name='FC')(combined)
 
-        model = keras.Model(inputs=[input_a,input_b], outputs=output_layer)
+        model = keras.Model(inputs=[input_a,input_b], outputs=output_layer, name=name)
+        
+        return model
 
+    def build_model(self, model: keras.Model):
         model.compile(loss=keras.losses.BinaryCrossentropy(), optimizer = keras.optimizers.Adam(), 
             metrics=[keras.metrics.BinaryAccuracy(name='accuracy', dtype=None, threshold=0.5), 
                     keras.metrics.Recall(name='Recall'), keras.metrics.Precision(name='Precision'),
@@ -486,8 +533,33 @@ class RESNET_MLP:
 
         if self.verbose == 2:
             print(model.summary())
-        
+
         return model
+
+    def fit_(self, model: keras.Model, ds, batch_size = 8, 
+                reduce_lr_patient=10, stop_patient=20, nb_epochs = 1500, steps_per_epoch = None,
+                reduce_monitor='loss', reduce_mode='auto', stop_monitor='loss', stop_mode='min', 
+                checkpoint_monitor='loss', checkpoint_mode='min'):
+        # nb_epochs = 1500
+        model_checkpoint = keras.callbacks.ModelCheckpoint(filepath=self.best_model_path, monitor=checkpoint_monitor, mode=checkpoint_mode, save_best_only=True,
+            save_weights_only=True, verbose=self.verbose)
+        reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor=reduce_monitor, verbose=self.verbose>=2, patience=reduce_lr_patient, mode=reduce_mode
+            , cooldown = 2, min_lr=1e-7
+        )
+        early_stop = keras.callbacks.EarlyStopping(monitor=stop_monitor, mode=stop_mode, verbose=self.verbose, patience=stop_patient, restore_best_weights=True)        
+        
+        callbacks = [model_checkpoint, reduce_lr, early_stop]
+
+        fit_verbose = 2 if self.verbose>=1 else 0
+        hist = model.fit(ds, batch_size=batch_size, epochs=nb_epochs, steps_per_epoch = steps_per_epoch,
+                              verbose=fit_verbose, callbacks=callbacks)
+                          
+        if (self.verbose >= 2):
+            model.summary()
+
+        model.save_weights(self.last_model_path)
+
+        keras.backend.clear_session()
 
 
 def training_resnet_mlp(data_folder, model_folder, verbose=1):
@@ -554,3 +626,6 @@ def training_resnet_mlp(data_folder, model_folder, verbose=1):
 
     model.save_weights(last_model_path)
     
+
+if __name__ == '__main__':
+    train_challenge_model('training_data', 'model', 2)
