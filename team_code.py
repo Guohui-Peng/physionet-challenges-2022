@@ -348,7 +348,7 @@ def get_wav_data(data, recordings, padding=400, fs=4000):
                         record = band_filter(record, 2, 25, 200, fs)
                         record = librosa.resample(record, orig_sr=fs, target_sr=1000)
                         record = librosa.feature.melspectrogram(y=record, sr=1000, n_fft=1024, hop_length=512, n_mels=128)
-                        record = librosa.power_to_db(record, ref=np.max)
+                        record = librosa.power_to_db(record)
 
                         # record = librosa.feature.melspectrogram(y=record, sr=1000, n_fft=1024, hop_length=512, n_mels=128)
                         # record = librosa.power_to_db(record)
