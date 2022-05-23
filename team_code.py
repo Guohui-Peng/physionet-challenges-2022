@@ -345,7 +345,7 @@ def get_wav_data(data, recordings, padding=400, fs=4000):
                 if compare_strings(locations[i], recording_locations[j]) and np.size(recordings[i])>0:                    
                     if r[j] == 0:
                         record = recordings[i] / float(tf.int16.max)
-                        record = band_filter(record, 2, 25, 200, fs)
+                        record = band_filter(record, 2, 25, 240, fs)
                         record = librosa.resample(record, orig_sr=fs, target_sr=1000)
                         record = librosa.feature.melspectrogram(y=record, sr=1000, n_fft=1024, hop_length=512, n_mels=128)
                         record = librosa.power_to_db(record)
