@@ -34,21 +34,22 @@ PAD_LENGTH = 128
 
 # Train your model.
 def train_challenge_model(data_folder, model_folder, verbose):
-    batch_size = 16
+    batch_size = 64
     nb_epochs = 300
 
-    split_data(data_folder)
-
+    split_path = 'split_data'
+    # data_folder = split_data(data_folder, dest_folder=split_path)
+    
     # Find data files.
     if verbose >= 1:
         print('Finding data files...')
 
-    # Find the patient data files.
+    # # Find the patient data files.
     patient_files = find_patient_files(data_folder)
     num_patient_files = len(patient_files)
 
-    if num_patient_files==0:
-        raise Exception('No data was provided.')
+    # if num_patient_files==0:
+    #     raise Exception('No data was provided.')
 
     # Create a folder for the model if it does not already exist.
     os.makedirs(model_folder, exist_ok=True)
@@ -58,14 +59,14 @@ def train_challenge_model(data_folder, model_folder, verbose):
         print('Extracting features and labels from the Challenge data...')
 
     murmur_classes = ['Present', 'Unknown', 'Absent']
-    num_murmur_classes = len(murmur_classes)
+    # num_murmur_classes = len(murmur_classes)
     outcome_classes = ['Abnormal', 'Normal']
-    num_outcome_classes = len(outcome_classes)
+    # num_outcome_classes = len(outcome_classes)
 
     features = list()
-    recordings = list()
-    murmurs = list()
-    outcomes = list()
+    # recordings = list()
+    # murmurs = list()
+    # outcomes = list()
 
     for i in range(num_patient_files):
         if verbose >= 2:
@@ -76,67 +77,45 @@ def train_challenge_model(data_folder, model_folder, verbose):
         current_recordings = load_recordings(data_folder, current_patient_data)
         
         # Extract features.
-        current_recording = get_wav_data(current_patient_data, current_recordings, padding=PAD_LENGTH)
-        recording = current_recording
-        recording = np.reshape(current_recording, (1, 128, PAD_LENGTH, 5))
-        recordings.append(recording)
-
-        # Extract features.
         current_features = get_features(current_patient_data, current_recordings)
         features.append(current_features)
-
-        # Extract labels and use one-hot encoding.
-        current_murmur = np.zeros(num_murmur_classes, dtype=int)
-        murmur = get_murmur(current_patient_data)
-        if murmur in murmur_classes:
-            j = murmur_classes.index(murmur)
-            current_murmur[j] = 1
-        murmurs.append(current_murmur)
-
-        current_outcome = np.zeros(num_outcome_classes, dtype=int)
-        outcome = get_outcome(current_patient_data)
-        if outcome in outcome_classes:
-            j = outcome_classes.index(outcome)
-            current_outcome[j] = 1
-        outcomes.append(current_outcome)
-
-    recordings = np.vstack(recordings)
+    
     features = np.vstack(features)
-    murmurs = np.vstack(murmurs)
-    outcomes = np.vstack(outcomes)
+
+    imputer = SimpleImputer().fit(features)
+    # features = imputer.transform(features)
 
     # Train the model.
     if verbose >= 1:
         print('Training model...')
 
-    imputer = SimpleImputer().fit(features)
-    features = imputer.transform(features)
-
-    # Models
     m_model_folder = os.path.join(model_folder, 'murmur')
     o_model_folder = os.path.join(model_folder, 'outcome')
-    m_model = Team_Model(model_folder=m_model_folder, filters=[64,64,64], verbose=verbose)
-    o_model = Team_Model(model_folder=o_model_folder, filters=[64,64,64], verbose=verbose)
-    murmur_model = m_model.create_resnet_mlp(input_shape=[(128,PAD_LENGTH,5),(26,)], nb_classes=3)
-    outcome_model = o_model.create_resnet_mlp(input_shape=[(128,PAD_LENGTH,5),(26,)], nb_classes=2)
-    m_model.build_model(murmur_model)
-    o_model.build_model(outcome_model)
+    train_murmur(data_path=split_path, model_path=m_model_folder, verbose=verbose,nb_epochs=nb_epochs,batch_size=64,n_mels=128,pad_length=128,imputer=imputer)
 
-    # Dataset
-    X = tf.data.Dataset.from_tensor_slices((recordings,features))
-    murmur_y = tf.data.Dataset.from_tensor_slices(murmurs)
-    m_ds = tf.data.Dataset.zip((X, murmur_y))
-    outcome_y = tf.data.Dataset.from_tensor_slices(outcomes)
-    o_ds = tf.data.Dataset.zip((X, outcome_y))
+    # # Models
+    # m_model = Team_Model(model_folder=m_model_folder, filters=[32,32,32], verbose=verbose)
+    # o_model = Team_Model(model_folder=o_model_folder, filters=[32,32,32], verbose=verbose)
+    # murmur_model = m_model.create_resnet_mlp(input_shape=[(128,PAD_LENGTH,5),(26,)], nb_classes=3)
+    # outcome_model = o_model.create_resnet_mlp(input_shape=[(128,PAD_LENGTH,5),(26,)], nb_classes=2)
+    # m_model.build_model(murmur_model)
+    # o_model.build_model(outcome_model)
 
-    m_ds = m_ds.batch(batch_size).prefetch(2)
-    o_ds = o_ds.batch(batch_size).prefetch(2)
+    # # Dataset
+    # X = tf.data.Dataset.from_tensor_slices((recordings,features))
+    # murmur_y = tf.data.Dataset.from_tensor_slices(murmurs)
+    # m_ds = tf.data.Dataset.zip((X, murmur_y))
+    # outcome_y = tf.data.Dataset.from_tensor_slices(outcomes)
+    # o_ds = tf.data.Dataset.zip((X, outcome_y))
 
-    # Training    
-    m_model.fit_(murmur_model, ds=m_ds, reduce_lr_patient=5,stop_patient=15, batch_size=batch_size,nb_epochs=nb_epochs,
-                    reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='loss', checkpoint_mode='min')
-    o_model.fit_(outcome_model, ds=o_ds, reduce_lr_patient=5,stop_patient=15, batch_size=batch_size,nb_epochs=nb_epochs,
-                    reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='loss', checkpoint_mode='min')
+    # m_ds = m_ds.batch(batch_size).prefetch(2)
+    # o_ds = o_ds.batch(batch_size).prefetch(2)
+
+    # # Training    
+    # m_model.fit_(murmur_model, ds=m_ds, reduce_lr_patient=5,stop_patient=15, batch_size=batch_size,nb_epochs=nb_epochs,
+    #                 reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='loss', checkpoint_mode='min')
+    # o_model.fit_(outcome_model, ds=o_ds, reduce_lr_patient=5,stop_patient=15, batch_size=batch_size,nb_epochs=nb_epochs,
+    #                 reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='loss', checkpoint_mode='min')
 
     murmur_classifier = m_model_folder
     outcome_classifier = o_model_folder
@@ -171,38 +150,8 @@ def load_challenge_model(model_folder, verbose):
     model['murmur_classifier'] = m_model
     model['outcome_classifier'] = o_model
     return model
-# def load_challenge_model(model_folder, verbose):
-#     my_model_folder = os.path.join(model_folder, 'best_model')
-    
-#     new_model = RESNET_MLP(input_shape=[(128,PAD_LENGTH,5),(26,)],nb_classes=3,verbose=verbose).build_model()
-#     new_model.load_weights(my_model_folder).expect_partial()
-#     return new_model
 
 # Run your trained model. This function is *required*. You should edit this function to add your code, but do *not* change the
-# arguments of this function.
-# def run_challenge_model(model, data, recordings, verbose):    
-#     # Load features.
-#     current_recording = get_wav_data(data, recordings, PAD_LENGTH)
-#     current_recording = np.asarray(current_recording, dtype=np.float32)
-#     current_recording = np.reshape(current_recording, (1, 128, PAD_LENGTH, 5))    
-   
-#     current_features = get_features(data, recordings)
-#     current_features = np.reshape(current_features, (1, len(current_features))) 
-    
-#     pred = model.predict([current_recording, current_features])
-
-#     classes = ['Present', 'Unknown', 'Absent']
-#     # Get classifier probabilities.
-#     pred_softmax = tf.nn.softmax(pred[0])
-#     pred_softmax = pred_softmax.numpy()
-#     probabilities = pred_softmax
-
-#     # Choose label with higher probability.
-#     labels = np.zeros(len(classes), dtype=np.int_)
-#     idx = np.argmax(pred_softmax)
-#     labels[idx] = 1
-    
-#     return classes, labels, probabilities
 # arguments of this function.
 def run_challenge_model(model, data, recordings, verbose):
     imputer = model['imputer']
@@ -376,6 +325,7 @@ def split_data(data_folder, dest_folder='split_data', n=5, verbose=1):
 
     if verbose>=1:
         print(f'Splited data to {n} folders.')
+    return dest_folder
 
 def band_filter(original_signal, order, fc1,fc2, fs):
     b, a = sp.signal.butter(N=order, Wn=[2*fc1/fs,2*fc2/fs], btype='bandpass')
@@ -400,8 +350,9 @@ def get_wav_data(data, recordings, padding=400, fs=4000):
                     if r[j] == 0:
                         record = recordings[i] / float(tf.int16.max)
                         record = band_filter(record, 2, 25, 240, fs)
-                        record = librosa.resample(record, orig_sr=fs, target_sr=1000)
-                        record = librosa.feature.melspectrogram(y=record, sr=1000, n_fft=1024, hop_length=512, n_mels=128)
+                        # record = librosa.resample(record, orig_sr=fs, target_sr=1000)
+                        # record = librosa.feature.melspectrogram(y=record, sr=1000, n_fft=1024, hop_length=512, n_mels=128)
+                        record = librosa.feature.melspectrogram(y=record, sr=4000, n_fft=1024, hop_length=512, n_mels=128)
                         record = librosa.power_to_db(record)
 
                         # record = librosa.feature.melspectrogram(y=record, sr=1000, n_fft=1024, hop_length=512, n_mels=128)
@@ -426,83 +377,149 @@ def get_murmur_locations(data):
     if label is None:
         raise ValueError('No label available. Is your code trying to load labels from the hidden data?')
     return label
+################################################################################
 
-# Get the wav data for training
-def get_wav_data_training(data, recordings, padding=400, fs=4000):
-    locations = get_locations(data)
-    
-    recording_locations = ['AV', 'MV', 'PV', 'TV', 'PhC']
-    num_recording_locations = len(recording_locations)
+################################################################################
+#
+# Training
+#
+################################################################################
 
-    murmur_locations = get_murmur_locations(data)
-    has_murmur = not compare_strings(murmur_locations, 'nan')
-    m_locs = murmur_locations.split('+')
-    
-    recording_features = list()
-    num_locations = len(locations)
-    num_recordings = len(recordings)
-    if num_locations==num_recordings:
-        r = np.zeros((num_recording_locations, 1))
-        for i in range(num_locations):
-            for j in range(num_recording_locations):
-                if compare_strings(locations[i], recording_locations[j]) and np.size(recordings[i])>0:
-                    if r[j] == 0:
-                        if has_murmur: 
-                            if locations[i] in m_locs:
-                                record = recordings[i] / float(tf.int16.max)
-                                record = librosa.feature.melspectrogram(record, sr=1000, n_fft=1024, hop_length=512, n_mels=128)
-                                record = librosa.power_to_db(record)
-                                record = keras.preprocessing.sequence.pad_sequences(record, maxlen=padding, truncating='post',padding="post",dtype=float) 
-                            else:
-                                record = np.zeros((128, padding))
-                        else:
-                            record = recordings[i] / float(tf.int16.max)
-                            record = librosa.feature.melspectrogram(record, sr=1000, n_fft=1024, hop_length=512, n_mels=128)
-                            record = librosa.power_to_db(record)
-                            record = keras.preprocessing.sequence.pad_sequences(record, maxlen=padding, truncating='post',padding="post",dtype=float) 
-                        
-                        recording_features.append(record)
-                    r[j] = 1
-    num_recording_features = len(recording_features)
-    if num_recording_features < num_recording_locations:
-        for i in range(num_recording_locations-num_recording_features):
-            recording_features.append(np.zeros((128, padding)))
-    return recording_features
+def get_data(data_folder, patient_files, verbose=1):
+    murmur_classes = ['Present', 'Unknown', 'Absent']
+    num_murmur_classes = len(murmur_classes)
+    outcome_classes = ['Abnormal', 'Normal']
+    num_outcome_classes = len(outcome_classes)
 
-# Load data for training or test
-def get_data(classes, patient_files, pad_length, data_folder, get_training_func):
     num_patient_files = len(patient_files)
-    num_classes = len(classes)
+
     features = list()
     recordings = list()
-    labels = list()
+    murmurs = list()
+    outcomes = list()
 
     for i in range(num_patient_files):
+        if verbose >= 2:
+            print('Loading {}:   {}/{}...'.format(data_folder, i+1, num_patient_files))
+
         # Load the current patient data and recordings.
         current_patient_data = load_patient_data(patient_files[i])
         current_recordings = load_recordings(data_folder, current_patient_data)
+        
+        # Extract features.
+        current_recording = get_wav_data(current_patient_data, current_recordings, padding=PAD_LENGTH)
+        recording = current_recording
+        recording = np.reshape(current_recording, (1, 128, PAD_LENGTH, 5))
+        recordings.append(recording)
 
         # Extract features.
-        current_recording = get_training_func(current_patient_data, current_recordings, pad_length)
-        recording = current_recording
-        recording = np.reshape(current_recording, (1, 128, pad_length, 5))
-        recordings.append(recording)
-        # print(recording)
         current_features = get_features(current_patient_data, current_recordings)
         features.append(current_features)
 
         # Extract labels and use one-hot encoding.
-        current_labels = np.zeros(num_classes, dtype=int)
-        label = get_murmur(current_patient_data)
-        if label in classes:
-            j = classes.index(label)
-            current_labels[j] = 1
-        labels.append(current_labels)
+        current_murmur = np.zeros(num_murmur_classes, dtype=int)
+        murmur = get_murmur(current_patient_data)
+        if murmur in murmur_classes:
+            j = murmur_classes.index(murmur)
+            current_murmur[j] = 1
+        murmurs.append(current_murmur)
+
+        current_outcome = np.zeros(num_outcome_classes, dtype=int)
+        outcome = get_outcome(current_patient_data)
+        if outcome in outcome_classes:
+            j = outcome_classes.index(outcome)
+            current_outcome[j] = 1
+        outcomes.append(current_outcome)
+
     recordings = np.vstack(recordings)
     features = np.vstack(features)
-    labels = np.vstack(labels)
-    return recordings,features,labels
-################################################################################
+    murmurs = np.vstack(murmurs)
+    outcomes = np.vstack(outcomes)
+    return recordings, features, murmurs, outcomes
+
+def murmur_load_data(data_folders:list, verbose=1, imputer=None):
+    X1,X2,y = [],[],[]
+    for data_folder in data_folders:
+        patient_files = find_patient_files(data_folder)
+        X_train1,X_train2,y_train,_ = get_data(data_folder=data_folder, patient_files=patient_files, verbose=verbose)
+        X1.append(X_train1)
+        X2.append(X_train2)
+        y.append(y_train)
+
+    X1 = np.vstack(X1)
+    X2 = np.vstack(X2)
+    y = np.vstack(y)
+    if imputer is not None:
+        X2 = imputer.transform(X2)
+    ds_x = tf.data.Dataset.from_tensor_slices((X1,X2))
+    ds_y = tf.data.Dataset.from_tensor_slices(y)
+    ds = tf.data.Dataset.zip((ds_x, ds_y))
+    ds = ds.shuffle(y.shape[0] ,reshuffle_each_iteration=True)
+    return ds
+
+def outcome_load_data(data_folders:list, verbose=1, imputer=None):
+    X1,X2,y = [],[],[]
+    for data_folder in data_folders:
+        patient_files = find_patient_files(data_folder)
+        X_train1,X_train2,_,y_train = get_data(data_folder=data_folder, patient_files=patient_files, verbose=verbose)
+        X1.append(X_train1)
+        X2.append(X_train2)
+        y.append(y_train)
+
+    X1 = np.vstack(X1)
+    X2 = np.vstack(X2)
+    y = np.vstack(y)
+    if imputer is not None:
+        X2 = imputer.transform(X2)
+    ds_x = tf.data.Dataset.from_tensor_slices((X1,X2))
+    ds_y = tf.data.Dataset.from_tensor_slices(y)
+    ds = tf.data.Dataset.zip((ds_x, ds_y))
+    ds = ds.shuffle(y.shape[0] ,reshuffle_each_iteration=True)
+    return ds    
+
+def train_murmur(model_path = 'resnet_mlp', data_path='split_data/', verbose = 2, nb_epochs = 200, batch_size = 64, n_mels = 128, pad_length=128, imputer=None):
+    model_folder = os.path.join('model', model_path)
+    # log_base_dir = os.path.join('/physionet/logs', log_path)
+    PAD_LENGTH = pad_length
+
+    num_folders = 5
+    dest_folder = data_path
+
+    # test_folders=[os.path.join(dest_folder,'5')]
+    for k in range(num_folders):
+        training_folders = []
+        for i in range(num_folders):
+            if i == k:
+                continue
+            else:
+                training_folders.append(os.path.join(dest_folder,str(i+1)))
+        
+        val_folders=[os.path.join(dest_folder,str(k+1))]
+        model_folder_k = os.path.join(model_folder,str(k+1))
+        
+        # 2022
+        # t_data = Team_Data_2022(classes = ['Present', 'Unknown', 'Absent'], fixed_length=PAD_LENGTH, fs=frequency, n_fft=1024, hop_length=512, n_mels=n_mels)
+        # configs = t_data.get_config()
+        # configs.update({"folder-k": k+1})
+        t_model = Team_Model(model_folder=model_folder_k, filters=[32,32,32], verbose=verbose)
+        pre_training_model_path = None
+        model = t_model.create_resnet_mlp(input_shape=[(n_mels,PAD_LENGTH,5),(26,)],nb_classes=3, pre_training_model_path=pre_training_model_path)
+        t_model.build_model(model)
+        
+        # load data
+        train_ds = murmur_load_data(data_folders=training_folders,verbose=verbose, imputer=imputer)
+        val_ds = murmur_load_data(data_folders=val_folders,verbose=verbose, imputer=imputer)        
+        train_ds = train_ds.batch(batch_size).prefetch(2)
+        val_ds = val_ds.batch(batch_size).prefetch(2)
+        # test_ds = test_ds.batch(batch_size).prefetch(2)
+        
+        t_model.fit_(model, train_ds=train_ds, val_ds=val_ds,reduce_lr_patient=5,stop_patient=15, batch_size=batch_size,nb_epochs=nb_epochs,
+                    reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='val_AUPRC', checkpoint_mode='max')
+        # t_model.test_(model,test_ds)
+        del model
+        del t_model
+        # del t_data
+
 
 ################################################################################
 #
@@ -620,7 +637,7 @@ class Team_Model:
 
         return model
 
-    def fit_(self, model: keras.Model, ds, batch_size = 8, 
+    def fit_(self, model: keras.Model, train_ds:tf.data.Dataset, val_ds:tf.data.Dataset=None, batch_size = 8, 
                 reduce_lr_patient=10, stop_patient=20, nb_epochs = 1500, steps_per_epoch = None,
                 reduce_monitor='loss', reduce_mode='auto', stop_monitor='loss', stop_mode='min', 
                 checkpoint_monitor='loss', checkpoint_mode='min'):
@@ -635,7 +652,11 @@ class Team_Model:
         callbacks = [model_checkpoint, reduce_lr, early_stop]
 
         fit_verbose = 2 if self.verbose>=1 else 0
-        hist = model.fit(ds, batch_size=batch_size, epochs=nb_epochs, steps_per_epoch = steps_per_epoch,
+        if not val_ds is None:
+            hist = model.fit(train_ds, batch_size=batch_size, epochs=nb_epochs, steps_per_epoch = steps_per_epoch,
+                              verbose=fit_verbose, validation_data=val_ds, callbacks=callbacks)
+        else:
+            hist = model.fit(train_ds, batch_size=batch_size, epochs=nb_epochs, steps_per_epoch = steps_per_epoch, 
                               verbose=fit_verbose, callbacks=callbacks)
                           
         if (self.verbose >= 2):
