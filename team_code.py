@@ -92,6 +92,8 @@ def train_challenge_model(data_folder, model_folder, verbose):
     m_model_folder = os.path.join(model_folder, 'murmur')
     o_model_folder = os.path.join(model_folder, 'outcome')
     train_murmur(data_path=split_path, model_path=m_model_folder, verbose=verbose,nb_epochs=nb_epochs,batch_size=64,n_mels=128,pad_length=128,imputer=imputer)
+    train_outcome(data_path=split_path, model_path=o_model_folder, murmur_model_path=m_model_folder, murmur_model_type='best', 
+                verbose=verbose,nb_epochs=nb_epochs,batch_size=64,n_mels=128,pad_length=128,imputer=imputer)
 
     # # Models
     # m_model = Team_Model(model_folder=m_model_folder, filters=[32,32,32], verbose=verbose)
@@ -471,21 +473,20 @@ def outcome_load_data(data_folders:list, verbose=1, imputer=None):
     y = np.vstack(y)
     if imputer is not None:
         X2 = imputer.transform(X2)
-    ds_x = tf.data.Dataset.from_tensor_slices((X1,X2))
-    ds_y = tf.data.Dataset.from_tensor_slices(y)
-    ds = tf.data.Dataset.zip((ds_x, ds_y))
-    ds = ds.shuffle(y.shape[0] ,reshuffle_each_iteration=True)
-    return ds    
+    # ds_x = tf.data.Dataset.from_tensor_slices((X1,X2))
+    # ds_y = tf.data.Dataset.from_tensor_slices(y)
+    # ds = tf.data.Dataset.zip((ds_x, ds_y))
+    # ds = ds.shuffle(y.shape[0] ,reshuffle_each_iteration=True)
+    return X1,X2,y   
 
 def train_murmur(model_path = 'resnet_mlp', data_path='split_data/', verbose = 2, nb_epochs = 200, batch_size = 64, n_mels = 128, pad_length=128, imputer=None):
-    model_folder = os.path.join('model', model_path)
+    model_folder = os.path.join(model_path)
     # log_base_dir = os.path.join('/physionet/logs', log_path)
     PAD_LENGTH = pad_length
 
     num_folders = 5
     dest_folder = data_path
 
-    # test_folders=[os.path.join(dest_folder,'5')]
     for k in range(num_folders):
         training_folders = []
         for i in range(num_folders):
@@ -497,10 +498,6 @@ def train_murmur(model_path = 'resnet_mlp', data_path='split_data/', verbose = 2
         val_folders=[os.path.join(dest_folder,str(k+1))]
         model_folder_k = os.path.join(model_folder,str(k+1))
         
-        # 2022
-        # t_data = Team_Data_2022(classes = ['Present', 'Unknown', 'Absent'], fixed_length=PAD_LENGTH, fs=frequency, n_fft=1024, hop_length=512, n_mels=n_mels)
-        # configs = t_data.get_config()
-        # configs.update({"folder-k": k+1})
         t_model = Team_Model(model_folder=model_folder_k, filters=[32,32,32], verbose=verbose)
         pre_training_model_path = None
         model = t_model.create_resnet_mlp(input_shape=[(n_mels,PAD_LENGTH,5),(26,)],nb_classes=3, pre_training_model_path=pre_training_model_path)
@@ -511,15 +508,86 @@ def train_murmur(model_path = 'resnet_mlp', data_path='split_data/', verbose = 2
         val_ds = murmur_load_data(data_folders=val_folders,verbose=verbose, imputer=imputer)        
         train_ds = train_ds.batch(batch_size).prefetch(2)
         val_ds = val_ds.batch(batch_size).prefetch(2)
-        # test_ds = test_ds.batch(batch_size).prefetch(2)
         
         t_model.fit_(model, train_ds=train_ds, val_ds=val_ds,reduce_lr_patient=5,stop_patient=15, batch_size=batch_size,nb_epochs=nb_epochs,
                     reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='val_AUPRC', checkpoint_mode='max')
-        # t_model.test_(model,test_ds)
         del model
         del t_model
         # del t_data
 
+def train_outcome(model_path = 'resnet_mlp', murmur_model_path='murmur',murmur_model_type='last_model', data_path='split_data/', verbose = 2, nb_epochs = 200, batch_size = 64, n_mels = 128, pad_length=128, imputer=None):
+    model_folder = os.path.join(model_path)
+    murmur_model_path =  os.path.join(murmur_model_path)
+    # log_base_dir = os.path.join('/physionet/logs', log_path)
+    PAD_LENGTH = pad_length
+
+    num_folders = 5
+    dest_folder = data_path
+
+    murmur_fold_qty = 5
+    murmur_models = list()
+    for i in range(murmur_fold_qty):
+        m_model = Team_Model(model_folder=murmur_model_path, filters=[32,32,32], verbose=verbose)
+        murmur_model = m_model.create_resnet_mlp(input_shape=[(n_mels,PAD_LENGTH,5),(26,)],nb_classes=3)
+        m_path = os.path.join(murmur_model_path, str(i+1), murmur_model_type)
+        murmur_model.load_weights(m_path).expect_partial()
+        murmur_model.trainable = False        
+        murmur_models.append(murmur_model)
+
+    for k in range(num_folders):
+        training_folders = []
+        for i in range(num_folders):
+            if i == k:
+                continue
+            else:
+                training_folders.append(os.path.join(dest_folder,str(i+1)))
+        
+        val_folders=[os.path.join(dest_folder,str(k+1))]
+        model_folder_k = os.path.join(model_folder,str(k+1))
+        
+        t_model = Team_Model(model_folder=model_folder_k, filters=[32,32,32], verbose=verbose)
+        pre_training_model_path = None
+        model = t_model.create_resnet_mlp(input_shape=[(n_mels,PAD_LENGTH,5),(26,)],nb_classes=3, pre_training_model_path=pre_training_model_path)
+        t_model.build_model(model)
+        
+        # load data
+        train_x, train_x2, train_y = outcome_load_data(data_folders=training_folders,verbose=verbose, imputer=imputer)
+        val_x, val_x2, val_y = outcome_load_data(data_folders=val_folders,verbose=verbose, imputer=imputer)
+        
+        # Get Murmur model predicted data
+        murmur_features = list()
+        for m in murmur_models:
+            m_predict = m.predict(train_x,batch_size=batch_size)
+            m_predict = tf.nn.softmax(m_predict)            
+            murmur_features.append(m_predict)
+        murmur_features = np.asarray(murmur_features)
+        train_x3 = murmur_features.flatten()
+
+        val_murmur_features = list()
+        for m in murmur_models:
+            m_predict = m.predict(val_x,batch_size=batch_size)
+            m_predict = tf.nn.softmax(m_predict)            
+            val_murmur_features.append(m_predict)
+        val_murmur_features = np.asarray(val_murmur_features)
+        val_x3 = val_murmur_features.flatten()
+
+        train_ds_x = tf.data.Dataset.from_tensor_slices((train_x, train_x2, train_x3))
+        train_ds_y = tf.data.Dataset.from_tensor_slices(train_y)
+        train_ds = tf.data.Dataset.zip((train_ds_x, train_ds_y))
+        train_ds = train_ds.shuffle(train_y.shape[0],reshuffle_each_iteration=True)
+
+        val_ds_x = tf.data.Dataset.from_tensor_slices((val_x, val_x2,val_x3))
+        val_ds_y = tf.data.Dataset.from_tensor_slices(val_y)
+        val_ds = tf.data.Dataset.zip((val_ds_x, val_ds_y))        
+        val_ds = val_ds.shuffle(val_y.shape[0],reshuffle_each_iteration=True)
+
+        train_ds = train_ds.batch(batch_size).prefetch(2)
+        val_ds = val_ds.batch(batch_size).prefetch(2)
+        
+        t_model.fit_(model, train_ds=train_ds, val_ds=val_ds,reduce_lr_patient=5,stop_patient=15, batch_size=batch_size,nb_epochs=nb_epochs,
+                    reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='val_AUPRC', checkpoint_mode='max')
+        del model
+        del t_model
 
 ################################################################################
 #
