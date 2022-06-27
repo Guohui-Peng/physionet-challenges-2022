@@ -4,3 +4,4 @@ test_data/*
 model/*
 __pycache__/*
 logs/*
+split_data/*
