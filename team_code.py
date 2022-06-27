@@ -14,10 +14,10 @@ from helper_code import *
 import numpy as np, scipy as sp, os, joblib
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
-import tensorflow.keras as keras
+import keras.api._v2.keras as keras
 import tensorflow as tf
 import keras.backend as K
-import librosa
+import librosa, random, shutil
 # import random
 
 from sklearn.impute import SimpleImputer
@@ -31,10 +31,13 @@ from sklearn.impute import SimpleImputer
 ################################################################################
 PAD_LENGTH = 128
 
+
 # Train your model.
 def train_challenge_model(data_folder, model_folder, verbose):
     batch_size = 16
     nb_epochs = 300
+
+    split_data(data_folder)
 
     # Find data files.
     if verbose >= 1:
@@ -147,12 +150,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
 
     if verbose >= 1:
         print('Done.')
-# def train_challenge_model(data_folder, model_folder, verbose):
 
-#     training_resnet_mlp(data_folder, model_folder, verbose)
-
-#     if verbose >= 1:
-#         print('Done.')
 
 # Load your trained model. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
@@ -323,6 +321,62 @@ def get_features(data, recordings):
 
     return np.asarray(features, dtype=np.float32)
 
+################################################################################
+# Added functions
+
+def find_files(data_folder, patient_id):
+    # Find patient files.
+    filenames = list()
+    for f in sorted(os.listdir(data_folder)):
+        root, extension = os.path.splitext(f)
+        if root.startswith(f'{patient_id}_'):
+            filename = os.path.join(data_folder, f)
+            filenames.append(filename)
+    return filenames
+
+def copy_files(data_folder, files, dst_path):
+    os.makedirs(dst_path, exist_ok=True)
+    for file in files:
+        shutil.copy(file,dst_path)
+        patient_id = get_patient_id(load_patient_data(file))
+        relevant_files = find_files(data_folder, patient_id=patient_id)
+        if(len(relevant_files)>0):
+            for f in relevant_files:
+                shutil.copy(f,dst_path)
+
+# Split training data to n folders
+def split_data(data_folder, dest_folder='split_data', n=5, verbose=1):
+    if verbose>=1:
+        print('Spliting data...')
+
+    patient_files = find_patient_files(data_folder)    
+    num_patient_files = len(patient_files)
+    num_files_per_path = num_patient_files // n
+
+    random_seed = 20
+    random.seed(random_seed)
+    random.shuffle(patient_files)    
+    
+    dest_folder = os.path.join(dest_folder)
+    if os.path.exists(dest_folder):
+        # remove exists splited data folder
+        shutil.rmtree(dest_folder)
+    
+    pos_s = 0
+    pos_e = 0
+    for i in range(n-1):
+        pos_s = min(i*num_files_per_path, num_patient_files)        
+        pos_e = min((i+1)*num_files_per_path, num_patient_files)
+        
+        d_path = os.path.join(dest_folder, str(i+1))
+        copy_files(data_folder, patient_files[pos_s:pos_e], d_path)
+    
+    d_path = os.path.join(dest_folder, str(n))
+    copy_files(data_folder, patient_files[pos_e:],d_path)
+
+    if verbose>=1:
+        print(f'Splited data to {n} folders.')
+
 def band_filter(original_signal, order, fc1,fc2, fs):
     b, a = sp.signal.butter(N=order, Wn=[2*fc1/fs,2*fc2/fs], btype='bandpass')
     new_signal = sp.signal.lfilter(b, a, original_signal)
@@ -448,7 +502,7 @@ def get_data(classes, patient_files, pad_length, data_folder, get_training_func)
     features = np.vstack(features)
     labels = np.vstack(labels)
     return recordings,features,labels
-
+################################################################################
 
 ################################################################################
 #
@@ -602,4 +656,4 @@ class Team_Model:
     
 
 if __name__ == '__main__':
-    train_challenge_model('training_data', 'model', 2)
+    train_challenge_model('training_data', 'model', 2)    
