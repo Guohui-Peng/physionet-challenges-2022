@@ -37,7 +37,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
     nb_epochs = 300
 
     split_path = 'split_data'
-    # split_data(data_folder, dest_folder=split_path)
+    split_data(data_folder, dest_folder=split_path)
     
     # Find data files.
     if verbose >= 1:
@@ -83,7 +83,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
 
     m_model_folder = os.path.join(model_folder, 'murmur')
     o_model_folder = os.path.join(model_folder, 'outcome')
-    # train_murmur(data_path=split_path, model_path=m_model_folder, verbose=verbose,nb_epochs=nb_epochs,batch_size=64,n_mels=128,pad_length=128,imputer=imputer)
+    train_murmur(data_path=split_path, model_path=m_model_folder, verbose=verbose,nb_epochs=nb_epochs,batch_size=64,n_mels=128,pad_length=128,imputer=imputer)
     train_outcome(data_path=split_path, model_path=o_model_folder, murmur_model_path=m_model_folder, murmur_model_type='best_model', 
                 verbose=verbose,nb_epochs=nb_epochs,batch_size=64,n_mels=128,pad_length=128,imputer=imputer)
 
@@ -107,17 +107,30 @@ def load_challenge_model(model_folder, verbose):
     model = joblib.load(filename)
     murmur_model_path = model['murmur_classifier']
     outcome_model_path = model['outcome_classifier']
-    m_model_factory = Team_Model(model_folder=murmur_model_path, filters=[64,64,64], verbose=verbose)
-    o_model_factory = Team_Model(model_folder=outcome_model_path, filters=[64,64,64], verbose=verbose)
-    murmur_model = m_model_factory.create_resnet_mlp(input_shape=[(128,PAD_LENGTH,5),(26,)], nb_classes=3)
-    outcome_model = o_model_factory.create_resnet_mlp_outcome(input_shape=[(128,PAD_LENGTH,5),(26,),(3*5,)], nb_classes=2)
-    # Restore models
-    m_model_factory.build_model(murmur_model)
-    m_model = m_model_factory.load_best_weight(murmur_model)
-    o_model_factory.build_model(outcome_model)
-    o_model = o_model_factory.load_best_weight(outcome_model)
-    model['murmur_classifier'] = m_model
-    model['outcome_classifier'] = o_model
+
+    murmur_fold_qty = 5
+    murmur_models = list()
+    for i in range(murmur_fold_qty):
+        m_model = Team_Model(model_folder=murmur_model_path, filters=[32,32,32], verbose=verbose)
+        murmur_model = m_model.create_resnet_mlp(input_shape=[(128,PAD_LENGTH,5),(26,)],nb_classes=3)
+        m_path = os.path.join(murmur_model_path, str(i+1), 'best_model')
+        murmur_model.load_weights(m_path).expect_partial()
+        murmur_model.trainable = False        
+        murmur_models.append(murmur_model)
+
+    outcome_fold_qty = 5
+    outcome_models = list()
+    for i in range(outcome_fold_qty):
+        o_model = Team_Model(model_folder=outcome_model_path, filters=[32,32,32], verbose=verbose)
+        outcome_model = o_model.create_resnet_mlp_outcome(input_shape=[(128,PAD_LENGTH,5),(26,),(3*murmur_fold_qty,)],nb_classes=2)
+        m_path = os.path.join(outcome_model_path, str(i+1), 'best_model')
+        outcome_model.load_weights(m_path).expect_partial()
+        outcome_model.trainable = False        
+        outcome_models.append(outcome_model)
+
+    model['murmur_models'] = murmur_models
+    model['outcome_models'] = outcome_models
+    
     return model
 
 # Run your trained model. This function is *required*. You should edit this function to add your code, but do *not* change the
@@ -125,9 +138,11 @@ def load_challenge_model(model_folder, verbose):
 def run_challenge_model(model, data, recordings, verbose):
     imputer = model['imputer']
     murmur_classes = model['murmur_classes']
-    murmur_classifier = model['murmur_classifier']
+    # murmur_classifier = model['murmur_classifier']
+    murmur_models = model['murmur_models']
     outcome_classes = model['outcome_classes']
-    outcome_classifier = model['outcome_classifier']
+    # outcome_classifier = model['outcome_classifier']
+    outcome_models = model['outcome_models']
 
     # Extract features.
     current_recording = get_wav_data(data, recordings, padding=PAD_LENGTH, n_fft=1024, hop_length=512, n_mels=128)    
@@ -140,28 +155,38 @@ def run_challenge_model(model, data, recordings, verbose):
     features = features.reshape(1, -1)
     features = imputer.transform(features)
 
-    murmur_pred = murmur_classifier.predict([current_recording, features])
-    outcome_pred = outcome_classifier.predict([current_recording, features])
+    # Murmur predict
+    m_preds = list()
+    for m in murmur_models:
+        m_pred = m.predict([current_recording, features], verbose=0)
+        m_probabilities = tf.nn.softmax(m_pred[0])
+        # m_probabilities = m_probabilities.numpy()
+        m_preds.append(m_probabilities)
+    m_preds = np.asarray(m_preds)
+    # print('m_preds: ', m_preds)
+    m_pred_outcome = m_preds.reshape(1, -1)
 
-    # Get classifier probabilities.
-    murmur_probabilities = tf.nn.softmax(murmur_pred[0])    
-    murmur_probabilities = murmur_probabilities.numpy()
-    outcome_probabilities = tf.nn.softmax(outcome_pred[0])    
-    outcome_probabilities = outcome_probabilities.numpy()
-
-    # Get classifier probabilities.
-    # murmur_probabilities = murmur_classifier.predict_proba(features)
-    # murmur_probabilities = np.asarray(murmur_probabilities, dtype=np.float32)[:, 0, 1]
-    # outcome_probabilities = outcome_classifier.predict_proba(features)
-    # outcome_probabilities = np.asarray(outcome_probabilities, dtype=np.float32)[:, 0, 1]
-
+    # Outcome predict
+    o_preds = list()
+    for m in outcome_models:
+        o_pred = m.predict([current_recording, features, m_pred_outcome], verbose=0)
+        o_probabilities = tf.nn.softmax(o_pred[0])
+        o_preds.append(o_probabilities)
+    o_preds = np.asarray(o_preds)
+    # print('o_preds: ', o_preds)
+   
     # Choose label with highest probability.
     murmur_labels = np.zeros(len(murmur_classes), dtype=np.int_)
-    idx = np.argmax(murmur_probabilities)
-    murmur_labels[idx] = 1
+    m_idx, murmur_probabilities = vote_selection(m_preds, num_class=3)
+    murmur_labels = np.zeros(len(murmur_classes), dtype=np.int_)
+    murmur_labels[m_idx] = 1
+    print('murmur_labels: ', murmur_labels)
+
     outcome_labels = np.zeros(len(outcome_classes), dtype=np.int_)
-    idx = np.argmax(outcome_probabilities)
-    outcome_labels[idx] = 1
+    o_idx, outcome_probabilities = vote_selection(o_preds, num_class=2)
+    outcome_labels = np.zeros(len(outcome_classes), dtype=np.int_)
+    outcome_labels[o_idx] = 1
+    print('outcome_labels: ', outcome_labels)
 
     # Concatenate classes, labels, and probabilities.
     classes = murmur_classes + outcome_classes
@@ -175,6 +200,27 @@ def run_challenge_model(model, data, recordings, verbose):
 # Optional functions. You can change or remove these functions and/or add new functions.
 #
 ################################################################################
+
+def vote_selection(probabilities:list, num_class):
+    idxs = np.argmax(probabilities, axis=1)
+    idx = -1
+    # Select the class that votes more than 2 times
+    for i in range(num_class):
+        if np.count_nonzero(idxs == i) > 2:
+            idx = i
+            probs = np.sum(probabilities[idxs == i], axis=0)            
+            probs = tf.nn.softmax(probs)
+            probs = probs.numpy()            
+            break
+    # 
+    if idx == -1:
+        probs = np.sum(probabilities, axis=0)
+        probs = tf.nn.softmax(probs)
+        probs = probs.numpy()
+        idx = np.argmax(probs)
+    # print('probs: ',probs)
+    return idx, probs
+
 
 # Save your trained model.
 def save_challenge_model(model_folder, imputer, murmur_classes, murmur_classifier, outcome_classes, outcome_classifier):
