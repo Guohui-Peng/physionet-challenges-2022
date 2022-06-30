@@ -5,3 +5,4 @@ model/*
 __pycache__/*
 logs/*
 split_data/*
+scores.csv
