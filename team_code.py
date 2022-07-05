@@ -177,13 +177,13 @@ def run_challenge_model(model, data, recordings, verbose):
    
     # Choose label with highest probability.
     murmur_labels = np.zeros(len(murmur_classes), dtype=np.int_)
-    m_idx, murmur_probabilities = vote_selection(m_preds, num_class=3)
+    m_idx, murmur_probabilities = vote_selection(m_preds)
     murmur_labels = np.zeros(len(murmur_classes), dtype=np.int_)
     murmur_labels[m_idx] = 1
     print('murmur_labels: ', murmur_labels)
 
     outcome_labels = np.zeros(len(outcome_classes), dtype=np.int_)
-    o_idx, outcome_probabilities = vote_selection(o_preds, num_class=2)
+    o_idx, outcome_probabilities = outcome_vote_selection(o_preds)
     outcome_labels = np.zeros(len(outcome_classes), dtype=np.int_)
     outcome_labels[o_idx] = 1
     print('outcome_labels: ', outcome_labels)
@@ -201,20 +201,46 @@ def run_challenge_model(model, data, recordings, verbose):
 #
 ################################################################################
 
-def vote_selection(probabilities:list, num_class):
+def vote_selection(probabilities:list):
     idxs = np.argmax(probabilities, axis=1)
     idx = -1
     # Select the class that votes more than 2 times
-    for i in range(num_class):
+    count_0 = np.count_nonzero(idxs == 0)
+    # count_1 = np.count_nonzero(idxs == 1)
+    count_2 = np.count_nonzero(idxs == 2)
+    if count_2 >= 4:
+        idx = 2
+    elif count_0 >= 1:
+        idx = 0
+    else:
+        idx = 1
+
+    probs = np.sum(probabilities[idxs == idx], axis=0)            
+    probs = tf.nn.softmax(probs)
+    probs = probs.numpy()
+    # print('probs: ',probs)
+    return idx, probs
+
+
+def outcome_vote_selection(probabilities:list):
+    print('probabilities: ', probabilities)
+    preference_weight = np.array([0.55, 0.45])
+    # print('preference_weight: ', preference_weight)
+    prob_softmax = tf.nn.softmax(probabilities * preference_weight)
+    print('prob_softmax: ', prob_softmax)
+    idxs = np.argmax(prob_softmax, axis=1)
+    idx = -1
+    # Select the class that votes more than 2 times
+    for i in range(2):
         if np.count_nonzero(idxs == i) > 2:
             idx = i
-            probs = np.sum(probabilities[idxs == i], axis=0)            
+            probs = np.sum(prob_softmax[idxs == i], axis=0)            
             probs = tf.nn.softmax(probs)
             probs = probs.numpy()            
             break
     # 
     if idx == -1:
-        probs = np.sum(probabilities, axis=0)
+        probs = np.sum(prob_softmax, axis=0)
         probs = tf.nn.softmax(probs)
         probs = probs.numpy()
         idx = np.argmax(probs)
