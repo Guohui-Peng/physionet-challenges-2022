@@ -208,7 +208,7 @@ def vote_selection(probabilities:list):
     count_0 = np.count_nonzero(idxs == 0)
     # count_1 = np.count_nonzero(idxs == 1)
     count_2 = np.count_nonzero(idxs == 2)
-    if count_2 >= 4:
+    if count_2 >= 5:
         idx = 2
     elif count_0 >= 1:
         idx = 0
@@ -218,7 +218,7 @@ def vote_selection(probabilities:list):
     probs = np.sum(probabilities[idxs == idx], axis=0)            
     probs = tf.nn.softmax(probs)
     probs = probs.numpy()
-    # print('probs: ',probs)
+    
     return idx, probs
 
 
