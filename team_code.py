@@ -223,28 +223,23 @@ def vote_selection(probabilities:list):
 
 
 def outcome_vote_selection(probabilities:list):
-    print('probabilities: ', probabilities)
-    preference_weight = np.array([0.55, 0.45])
-    # print('preference_weight: ', preference_weight)
-    prob_softmax = tf.nn.softmax(probabilities * preference_weight)
-    print('prob_softmax: ', prob_softmax)
-    idxs = np.argmax(prob_softmax, axis=1)
+    # print('probabilities: ', probabilities)
+    # preference_weight = np.array([0.55, 0.45])
+    # prob_softmax = tf.nn.softmax(probabilities * preference_weight)
+    # print('prob_softmax: ', prob_softmax)
+    idxs = np.argmax(probabilities, axis=1)
     idx = -1
-    # Select the class that votes more than 2 times
-    for i in range(2):
-        if np.count_nonzero(idxs == i) > 2:
-            idx = i
-            probs = np.sum(prob_softmax[idxs == i], axis=0)            
-            probs = tf.nn.softmax(probs)
-            probs = probs.numpy()            
-            break
-    # 
-    if idx == -1:
-        probs = np.sum(prob_softmax, axis=0)
-        probs = tf.nn.softmax(probs)
-        probs = probs.numpy()
-        idx = np.argmax(probs)
-    # print('probs: ',probs)
+    # Selection
+    count_0 = np.count_nonzero(idxs == 0)
+    # count_1 = np.count_nonzero(idxs == 1)
+    if count_0 >= 2:
+        idx = 0
+    else:
+        idx = 1
+        
+    probs = np.sum(probabilities[idxs == idx], axis=0)            
+    probs = tf.nn.softmax(probs)
+    probs = probs.numpy()
     return idx, probs
 
 
