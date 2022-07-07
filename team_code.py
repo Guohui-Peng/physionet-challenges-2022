@@ -572,7 +572,7 @@ def train_murmur(model_path = 'resnet_mlp', data_path='split_data/', verbose = 2
         # del t_data
 
 
-def train_outcome(model_path = 'resnet_mlp', murmur_model_path='murmur',murmur_model_type='last_model', data_path='split_data/', verbose = 2, nb_epochs = 200, batch_size = 64, n_mels = 128, pad_length=128, imputer=None):
+def train_outcome(model_path = 'resnet_mlp', murmur_model_path='murmur',murmur_model_type='best_model', data_path='split_data/', verbose = 2, nb_epochs = 200, batch_size = 64, n_mels = 128, pad_length=128, imputer=None):
     model_folder = os.path.join(model_path)
     murmur_model_path =  os.path.join(murmur_model_path)
     PAD_LENGTH = pad_length
@@ -587,7 +587,7 @@ def train_outcome(model_path = 'resnet_mlp', murmur_model_path='murmur',murmur_m
         murmur_model = m_model.create_resnet_mlp(input_shape=[(n_mels,PAD_LENGTH,5),(26,)],nb_classes=3)
         m_path = os.path.join(murmur_model_path, str(i+1), murmur_model_type)
         murmur_model.load_weights(m_path).expect_partial()
-        murmur_model.trainable = False        
+        murmur_model.trainable = False
         murmur_models.append(murmur_model)
 
     for k in range(num_folders):
