@@ -29,6 +29,7 @@ from sklearn.impute import SimpleImputer
 #
 ################################################################################
 PAD_LENGTH = 128
+NUM_SPLIT_FOLD = 5
 
 
 # Train your model.
@@ -37,7 +38,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
     nb_epochs = 300
 
     split_path = 'split_data'
-    split_data(data_folder, dest_folder=split_path)
+    split_data(data_folder, dest_folder=split_path, n=NUM_SPLIT_FOLD)
     
     # Find data files.
     if verbose >= 1:
@@ -87,12 +88,12 @@ def train_challenge_model(data_folder, model_folder, verbose):
     train_outcome(data_path=split_path, model_path=o_model_folder, murmur_model_path=m_model_folder, murmur_model_type='best_model', 
                 verbose=verbose,nb_epochs=nb_epochs,batch_size=64,n_mels=128,pad_length=128,imputer=imputer)
 
+    # validation_outcome(data_path=data_folder, model_path=o_model_folder, murmur_model_path=m_model_folder, murmur_model_type='best_model', 
+    #              verbose=verbose,nb_epochs=nb_epochs,batch_size=64,n_mels=128,pad_length=128,imputer=imputer)
+
     murmur_classifier = m_model_folder
     outcome_classifier = o_model_folder
     
-    # murmur_classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, murmurs)
-    # outcome_classifier = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, outcomes)
-
     # Save the model.
     save_challenge_model(model_folder, imputer, murmur_classes, murmur_classifier, outcome_classes, outcome_classifier)
 
@@ -108,7 +109,7 @@ def load_challenge_model(model_folder, verbose):
     murmur_model_path = model['murmur_classifier']
     outcome_model_path = model['outcome_classifier']
 
-    murmur_fold_qty = 5
+    murmur_fold_qty = NUM_SPLIT_FOLD
     murmur_models = list()
     for i in range(murmur_fold_qty):
         m_model = Team_Model(model_folder=murmur_model_path, filters=[32,32,32], verbose=verbose)
@@ -118,13 +119,13 @@ def load_challenge_model(model_folder, verbose):
         murmur_model.trainable = False        
         murmur_models.append(murmur_model)
 
-    outcome_fold_qty = 5
+    outcome_fold_qty = NUM_SPLIT_FOLD
     outcome_models = list()
     for i in range(outcome_fold_qty):
         o_model = Team_Model(model_folder=outcome_model_path, filters=[32,32,32], verbose=verbose)
         outcome_model = o_model.create_resnet_mlp_outcome(input_shape=[(128,PAD_LENGTH,5),(26,),(3*murmur_fold_qty,)],nb_classes=2)
-        m_path = os.path.join(outcome_model_path, str(i+1), 'best_model')
-        outcome_model.load_weights(m_path).expect_partial()
+        o_path = os.path.join(outcome_model_path, str(i+1), 'best_model')
+        outcome_model.load_weights(o_path).expect_partial()
         outcome_model.trainable = False        
         outcome_models.append(outcome_model)
 
@@ -389,7 +390,7 @@ def get_wav_data(data, recordings, padding=128, fs=4000, n_fft=1024, hop_length=
                         # record = librosa.resample(record, orig_sr=fs, target_sr=1000)
                         # record = librosa.feature.melspectrogram(y=record, sr=1000, n_fft=1024, hop_length=512, n_mels=128)
                         record = librosa.feature.melspectrogram(y=record, sr=fs, n_fft=n_fft, hop_length=hop_length, n_mels=n_mels)
-                        record = librosa.power_to_db(record)
+                        record = librosa.power_to_db(record, top_db=120)
                         record = keras.preprocessing.sequence.pad_sequences(record, maxlen=padding, truncating='post',padding="post",dtype=float)
                         recording_features.append(record)
                     r[j] = 1
@@ -536,7 +537,7 @@ def train_murmur(model_path = 'resnet_mlp', data_path='split_data/', verbose = 2
     # log_base_dir = os.path.join('/physionet/logs', log_path)
     PAD_LENGTH = pad_length
 
-    num_folders = 5
+    num_folders = NUM_SPLIT_FOLD
     dest_folder = data_path
 
     for k in range(num_folders):
@@ -572,15 +573,51 @@ def train_murmur(model_path = 'resnet_mlp', data_path='split_data/', verbose = 2
         # del t_data
 
 
+def validation_outcome(model_path = 'resnet_mlp', murmur_model_path='murmur',murmur_model_type='best_model', data_path='training_data/', verbose = 2, nb_epochs = 200, batch_size = 64, n_mels = 128, pad_length=128, imputer=None):
+    model_folder = os.path.join(model_path)
+    murmur_model_path =  os.path.join(murmur_model_path)
+    PAD_LENGTH = pad_length
+
+    num_folders = NUM_SPLIT_FOLD
+    dest_folder = data_path
+
+    murmur_fold_qty = NUM_SPLIT_FOLD
+    murmur_models = list()
+    for i in range(murmur_fold_qty):
+        m_model = Team_Model(model_folder=murmur_model_path, filters=[32,32,32], verbose=verbose)
+        murmur_model = m_model.create_resnet_mlp(input_shape=[(n_mels,PAD_LENGTH,5),(26,)],nb_classes=3)
+        m_path = os.path.join(murmur_model_path, str(i+1), murmur_model_type)
+        murmur_model.load_weights(m_path).expect_partial()
+        murmur_model.trainable = False
+        murmur_models.append(murmur_model)
+
+    val_ds = outcome_load_data(data_folders=[data_path],verbose=verbose, imputer=imputer, murmur_models=murmur_models)
+    val_ds = val_ds.batch(batch_size).prefetch(2)
+
+    for k in range(num_folders):
+        model_folder_k = os.path.join(model_folder,str(k+1),'best_model')
+        
+        t_model = Team_Model(model_folder=model_folder_k, filters=[32,32,32], verbose=verbose)        
+        model = t_model.create_resnet_mlp_outcome(input_shape=[(n_mels,PAD_LENGTH,5),(26,),(3*num_folders,)],nb_classes=2)
+        t_model.build_model(model)
+        
+        model.load_weights(model_folder_k).expect_partial()
+        pred = model.evaluate(val_ds, batch_size=batch_size, verbose=1)
+        # print('Predict: ', pred)
+        
+        del model
+        del t_model
+
+
 def train_outcome(model_path = 'resnet_mlp', murmur_model_path='murmur',murmur_model_type='best_model', data_path='split_data/', verbose = 2, nb_epochs = 200, batch_size = 64, n_mels = 128, pad_length=128, imputer=None):
     model_folder = os.path.join(model_path)
     murmur_model_path =  os.path.join(murmur_model_path)
     PAD_LENGTH = pad_length
 
-    num_folders = 5
+    num_folders = NUM_SPLIT_FOLD
     dest_folder = data_path
 
-    murmur_fold_qty = 5
+    murmur_fold_qty = NUM_SPLIT_FOLD
     murmur_models = list()
     for i in range(murmur_fold_qty):
         m_model = Team_Model(model_folder=murmur_model_path, filters=[32,32,32], verbose=verbose)
@@ -688,9 +725,23 @@ class Team_Model:
     
     def create_resnet(self, input_shape, include_top=True, nb_classes=1, name='RESNET_C'):
         input_layer = keras.layers.Input(input_shape)
-        block_1 = RESNET_Block(self.filters)(input_layer)
-        block_2 = RESNET_Block([i*2 for i in self.filters])(block_1)
-        block_3 = RESNET_Block([i*2 for i in self.filters])(block_2)
+        block_1 = RESNET_Block(self.filters, kernels=[3, 3, 3])(input_layer)
+        block_2 = RESNET_Block([i*2 for i in self.filters], kernels=[3, 3, 3])(block_1)
+        block_3 = RESNET_Block([i*4 for i in self.filters], kernels=[3, 3, 3])(block_2)
+
+        output_layer = keras.layers.GlobalAveragePooling2D()(block_3)
+
+        if include_top == True:
+            output_layer = keras.layers.Dense(nb_classes, activation='sigmoid')(output_layer)
+
+        model = keras.models.Model(inputs=input_layer, outputs=output_layer, name=name)
+        return model
+
+    def create_resnet_outcome(self, input_shape, include_top=True, nb_classes=1, name='RESNET_C'):
+        input_layer = keras.layers.Input(input_shape)
+        block_1 = RESNET_Block(self.filters, kernels=[8, 5, 3])(input_layer)
+        block_2 = RESNET_Block([i*2 for i in self.filters], kernels=[8, 5, 3])(block_1)
+        block_3 = RESNET_Block([i*4 for i in self.filters], kernels=[8, 5, 3])(block_2)
 
         output_layer = keras.layers.GlobalAveragePooling2D()(block_3)
 
@@ -728,7 +779,7 @@ class Team_Model:
         input_shape_a, input_shape_b, input_shape_c = input_shape
         input_a = keras.layers.Input(input_shape_a)
 
-        resnet_model = self.create_resnet(input_shape=input_shape_a, include_top=False)
+        resnet_model = self.create_resnet_outcome(input_shape=input_shape_a, include_top=False)
         
         resnet = resnet_model(input_a)
         model_a = keras.Model(inputs=input_a, outputs=resnet)
@@ -801,4 +852,4 @@ class Team_Model:
     
 
 if __name__ == '__main__':
-    train_challenge_model('training_data', 'model', 1)
+    train_challenge_model('training_data', 'model', 2)
