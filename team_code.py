@@ -38,7 +38,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
     nb_epochs = 300
 
     split_path = 'split_data'
-    split_data(data_folder, dest_folder=split_path, n=NUM_SPLIT_FOLD)
+    # split_data(data_folder, dest_folder=split_path, n=NUM_SPLIT_FOLD)
     
     # Find data files.
     if verbose >= 1:
@@ -114,6 +114,7 @@ def load_challenge_model(model_folder, verbose):
     for i in range(murmur_fold_qty):
         m_model = Team_Model(model_folder=murmur_model_path, filters=[32,32,32], verbose=verbose)
         murmur_model = m_model.create_resnet_mlp(input_shape=[(128,PAD_LENGTH,5),(26,)],nb_classes=3)
+        m_model.build_model(murmur_model)
         m_path = os.path.join(murmur_model_path, str(i+1), 'best_model')
         murmur_model.load_weights(m_path).expect_partial()
         murmur_model.trainable = False        
@@ -124,6 +125,7 @@ def load_challenge_model(model_folder, verbose):
     for i in range(outcome_fold_qty):
         o_model = Team_Model(model_folder=outcome_model_path, filters=[32,32,32], verbose=verbose)
         outcome_model = o_model.create_resnet_mlp_outcome(input_shape=[(128,PAD_LENGTH,5),(26,),(3*murmur_fold_qty,)],nb_classes=2)
+        o_model.build_model(outcome_model)
         o_path = os.path.join(outcome_model_path, str(i+1), 'best_model')
         outcome_model.load_weights(o_path).expect_partial()
         outcome_model.trainable = False        
@@ -158,19 +160,25 @@ def run_challenge_model(model, data, recordings, verbose):
 
     # Murmur predict
     m_preds = list()
+    current_recording = tf.convert_to_tensor(current_recording, dtype=tf.float32)
+    features = tf.convert_to_tensor(features, dtype=tf.float32)
     for m in murmur_models:
-        m_pred = m.predict([current_recording, features], verbose=0)
+        m_pred = m([current_recording, features])
         m_probabilities = tf.nn.softmax(m_pred[0])
         # m_probabilities = m_probabilities.numpy()
         m_preds.append(m_probabilities)
     m_preds = np.asarray(m_preds)
-    # print('m_preds: ', m_preds)
+    # # print('m_preds: ', m_preds)
+
+    # m_preds = predict_murmur(murmur_models, current_recording, features)
     m_pred_outcome = m_preds.reshape(1, -1)
 
+    m_pred_outcome = tf.convert_to_tensor(m_pred_outcome,dtype=tf.float32)
+
     # Outcome predict
-    o_preds = list()
+    o_preds = list()    
     for m in outcome_models:
-        o_pred = m.predict([current_recording, features, m_pred_outcome], verbose=0)
+        o_pred = m([current_recording, features, m_pred_outcome])
         o_probabilities = tf.nn.softmax(o_pred[0])
         o_preds.append(o_probabilities)
     o_preds = np.asarray(o_preds)
@@ -181,13 +189,15 @@ def run_challenge_model(model, data, recordings, verbose):
     m_idx, murmur_probabilities = vote_selection(m_preds)
     murmur_labels = np.zeros(len(murmur_classes), dtype=np.int_)
     murmur_labels[m_idx] = 1
-    print('murmur_labels: ', murmur_labels)
+    if verbose >= 1:
+        print('murmur_labels: ', murmur_labels)
 
     outcome_labels = np.zeros(len(outcome_classes), dtype=np.int_)
     o_idx, outcome_probabilities = outcome_vote_selection(o_preds)
     outcome_labels = np.zeros(len(outcome_classes), dtype=np.int_)
     outcome_labels[o_idx] = 1
-    print('outcome_labels: ', outcome_labels)
+    if verbose >= 1:
+        print('outcome_labels: ', outcome_labels)
 
     # Concatenate classes, labels, and probabilities.
     classes = murmur_classes + outcome_classes
@@ -727,7 +737,7 @@ class Team_Model:
         input_layer = keras.layers.Input(input_shape)
         block_1 = RESNET_Block(self.filters, kernels=[3, 3, 3])(input_layer)
         block_2 = RESNET_Block([i*2 for i in self.filters], kernels=[3, 3, 3])(block_1)
-        block_3 = RESNET_Block([i*4 for i in self.filters], kernels=[3, 3, 3])(block_2)
+        block_3 = RESNET_Block([i*2 for i in self.filters], kernels=[3, 3, 3])(block_2)
 
         output_layer = keras.layers.GlobalAveragePooling2D()(block_3)
 
@@ -741,7 +751,7 @@ class Team_Model:
         input_layer = keras.layers.Input(input_shape)
         block_1 = RESNET_Block(self.filters, kernels=[8, 5, 3])(input_layer)
         block_2 = RESNET_Block([i*2 for i in self.filters], kernels=[8, 5, 3])(block_1)
-        block_3 = RESNET_Block([i*4 for i in self.filters], kernels=[8, 5, 3])(block_2)
+        block_3 = RESNET_Block([i*2 for i in self.filters], kernels=[8, 5, 3])(block_2)
 
         output_layer = keras.layers.GlobalAveragePooling2D()(block_3)
 
