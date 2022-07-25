@@ -553,7 +553,7 @@ def train_murmur(model_path = 'resnet_mlp', data_path='split_data/', verbose = 2
     num_folders = NUM_SPLIT_FOLD
     dest_folder = data_path
 
-    for k in range(4,num_folders):
+    for k in range(num_folders):
         training_folders = []
         for i in range(num_folders):
             if i == k:
@@ -738,9 +738,9 @@ class Team_Model:
     
     def create_resnet(self, input_shape, include_top=True, nb_classes=1, name='RESNET_C'):
         input_layer = keras.layers.Input(input_shape)
-        block_1 = RESNET_Block(self.filters, kernels=[8, 5, 3])(input_layer)
-        block_2 = RESNET_Block([i*2 for i in self.filters], kernels=[8, 5, 3])(block_1)
-        block_3 = RESNET_Block([i*2 for i in self.filters], kernels=[8, 5, 3])(block_2)
+        block_1 = RESNET_Block(self.filters, kernels=[3, 5, 3])(input_layer)
+        block_2 = RESNET_Block([i*2 for i in self.filters], kernels=[3, 5, 3])(block_1)
+        block_3 = RESNET_Block([i*2 for i in self.filters], kernels=[3, 5, 3])(block_2)
 
         output_layer = keras.layers.GlobalAveragePooling2D()(block_3)
 
