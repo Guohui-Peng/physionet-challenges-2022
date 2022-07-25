@@ -41,7 +41,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
     nb_epochs = 200
 
     split_path = 'split_data'
-    # split_data(data_folder, dest_folder=split_path, n=NUM_SPLIT_FOLD)
+    split_data(data_folder, dest_folder=split_path, n=NUM_SPLIT_FOLD)
     
     # Find data files.
     if verbose >= 1:
