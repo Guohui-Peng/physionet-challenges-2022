@@ -29,16 +29,15 @@ from sklearn.impute import SimpleImputer
 #
 ################################################################################
 PAD_LENGTH = 128
-NUM_SPLIT_FOLD = 5
-BATCH_SIZE = 32
+NUM_SPLIT_FOLD = 10
+BATCH_SIZE = 64
 MURMUR_FILTERS = [32, 32, 32]
 OUTCOME_FILTERS = [32, 32, 32]
 
 
 # Train your model.
 def train_challenge_model(data_folder, model_folder, verbose):
-    # batch_size = 64
-    nb_epochs = 200
+    nb_epochs = 300
 
     split_path = 'split_data'
     split_data(data_folder, dest_folder=split_path, n=NUM_SPLIT_FOLD)
@@ -163,17 +162,14 @@ def run_challenge_model(model, data, recordings, verbose):
 
     # Murmur predict
     m_preds = list()
-    current_recording = tf.convert_to_tensor(current_recording, dtype=tf.float32)
-    features = tf.convert_to_tensor(features, dtype=tf.float32)
+    # current_recording = tf.convert_to_tensor(current_recording, dtype=tf.float32)
+    # features = tf.convert_to_tensor(features, dtype=tf.float32)
     for m in murmur_models:
         m_pred = m([current_recording, features])
         m_probabilities = tf.nn.softmax(m_pred[0])
-        # m_probabilities = m_probabilities.numpy()
         m_preds.append(m_probabilities)
     m_preds = np.asarray(m_preds)
-    # # print('m_preds: ', m_preds)
-
-    # m_preds = predict_murmur(murmur_models, current_recording, features)
+    
     m_pred_outcome = m_preds.reshape(1, -1)
 
     m_pred_outcome = tf.convert_to_tensor(m_pred_outcome,dtype=tf.float32)
@@ -185,7 +181,6 @@ def run_challenge_model(model, data, recordings, verbose):
         o_probabilities = tf.nn.softmax(o_pred[0])
         o_preds.append(o_probabilities)
     o_preds = np.asarray(o_preds)
-    # print('o_preds: ', o_preds)
    
     # Choose label with highest probability.
     murmur_labels = np.zeros(len(murmur_classes), dtype=np.int_)
@@ -222,9 +217,9 @@ def vote_selection(probabilities:list):
     count_0 = np.count_nonzero(idxs == 0)
     # count_1 = np.count_nonzero(idxs == 1)
     count_2 = np.count_nonzero(idxs == 2)
-    if count_2 >= 5:
+    if count_2 >= 9:
         idx = 2
-    elif count_0 >= 1:
+    elif count_0 >= 2:
         idx = 0
     else:
         idx = 1
@@ -237,16 +232,12 @@ def vote_selection(probabilities:list):
 
 
 def outcome_vote_selection(probabilities:list):
-    # print('probabilities: ', probabilities)
-    # preference_weight = np.array([0.55, 0.45])
-    # prob_softmax = tf.nn.softmax(probabilities * preference_weight)
-    # print('prob_softmax: ', prob_softmax)
     idxs = np.argmax(probabilities, axis=1)
     idx = -1
     # Selection
     count_0 = np.count_nonzero(idxs == 0)
     # count_1 = np.count_nonzero(idxs == 1)
-    if count_0 >= 2:
+    if count_0 >= 3:
         idx = 0
     else:
         idx = 1
@@ -348,7 +339,7 @@ def split_data(data_folder, dest_folder='split_data', n=5, verbose=1):
     if verbose>=1:
         print('Spliting data...')
 
-    patient_files = find_patient_files(data_folder)    
+    patient_files = find_patient_files(data_folder)
     num_patient_files = len(patient_files)
     num_files_per_path = num_patient_files // n
 
@@ -413,17 +404,6 @@ def get_wav_data(data, recordings, padding=128, fs=4000, n_fft=1024, hop_length=
             recording_features.append(np.zeros((128, padding)))
     return recording_features   
 
-def get_murmur_locations(data):
-    label = 'nan'
-    for l in data.split('\n'):
-        if l.startswith('#Murmur locations:'):
-            try:
-                label = l.split(': ')[1]
-            except:
-                pass
-    if label is None:
-        raise ValueError('No label available. Is your code trying to load labels from the hidden data?')
-    return label
 ################################################################################
 
 ################################################################################
@@ -532,12 +512,9 @@ def outcome_load_data(data_folders:list, verbose=1, imputer=None, murmur_models=
             # print(m_predict)
             murmur_predicts.append(m_predict)
         murmur_predicts = np.asarray(murmur_predicts)
-        murmur_predicts = np.concatenate(murmur_predicts, axis=1)
-        # print('murmur_predicts: ', murmur_predicts.shape)
+        murmur_predicts = np.concatenate(murmur_predicts, axis=1)        
     
     X3 = np.vstack(murmur_predicts)
-    # print('murmur_features: ', X3)
-    # print('murmur_features: ', X3.shape)
 
     ds_x = tf.data.Dataset.from_tensor_slices((X1,X2,X3))
     ds_y = tf.data.Dataset.from_tensor_slices(y)
@@ -547,7 +524,6 @@ def outcome_load_data(data_folders:list, verbose=1, imputer=None, murmur_models=
 
 def train_murmur(model_path = 'resnet_mlp', data_path='split_data/', verbose = 2, nb_epochs = 200, batch_size = 64, n_mels = 128, pad_length=128, imputer=None):
     model_folder = os.path.join(model_path)
-    # log_base_dir = os.path.join('/physionet/logs', log_path)
     PAD_LENGTH = pad_length
 
     num_folders = NUM_SPLIT_FOLD
@@ -564,9 +540,8 @@ def train_murmur(model_path = 'resnet_mlp', data_path='split_data/', verbose = 2
         val_folders=[os.path.join(dest_folder,str(k+1))]
         model_folder_k = os.path.join(model_folder,str(k+1))
         
-        t_model = Team_Model(model_folder=model_folder_k, filters=MURMUR_FILTERS, verbose=verbose)
-        pre_training_model_path = None
-        model = t_model.create_resnet_mlp(input_shape=[(n_mels,PAD_LENGTH,5),(26,)],nb_classes=3, pre_training_model_path=pre_training_model_path)
+        t_model = Team_Model(model_folder=model_folder_k, filters=MURMUR_FILTERS, verbose=verbose)        
+        model = t_model.create_resnet_mlp(input_shape=[(n_mels,PAD_LENGTH,5),(26,)],nb_classes=3)
         t_model.build_model(model)
         
         # load data
@@ -750,7 +725,7 @@ class Team_Model:
         model = keras.models.Model(inputs=input_layer, outputs=output_layer, name=name)
         return model
 
-    def create_resnet_outcome(self, input_shape, include_top=True, nb_classes=1, name='RESNET_C'):
+    def create_resnet_outcome(self, input_shape, include_top=True, nb_classes=1, name='RESNET_O'):
         input_layer = keras.layers.Input(input_shape)
         block_1 = RESNET_Block(self.filters, kernels=[8, 5, 3])(input_layer)
         block_2 = RESNET_Block([i*2 for i in self.filters], kernels=[8, 5, 3])(block_1)
@@ -764,7 +739,7 @@ class Team_Model:
         model = keras.models.Model(inputs=input_layer, outputs=output_layer, name=name)
         return model
 
-    def create_resnet_mlp(self, input_shape, nb_classes:int, name='RESNET_MLP_C', pre_training_model_path=None):
+    def create_resnet_mlp(self, input_shape, nb_classes:int, name='RESNET_MLP_MURMUR', pre_training_model_path=None):
         input_shape_a, input_shape_b = input_shape
         input_a = keras.layers.Input(input_shape_a)
 
@@ -833,7 +808,7 @@ class Team_Model:
         model_checkpoint = keras.callbacks.ModelCheckpoint(filepath=self.best_model_path, monitor=checkpoint_monitor, mode=checkpoint_mode, save_best_only=True,
             save_weights_only=True, verbose=self.verbose)
         reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor=reduce_monitor, verbose=self.verbose>=2, patience=reduce_lr_patient, mode=reduce_mode
-            # , cooldown = 2, min_lr=1e-7
+            , cooldown = 2, min_lr=1e-6
         )
         early_stop = keras.callbacks.EarlyStopping(monitor=stop_monitor, mode=stop_mode, verbose=self.verbose, patience=stop_patient, restore_best_weights=True)        
         
