@@ -29,7 +29,7 @@ from sklearn.impute import SimpleImputer
 #
 ################################################################################
 PAD_LENGTH = 128
-NUM_SPLIT_FOLD = 10
+NUM_SPLIT_FOLD = 5
 BATCH_SIZE = 64
 MURMUR_FILTERS = [32, 32, 32]
 OUTCOME_FILTERS = [32, 32, 32]
@@ -217,9 +217,9 @@ def vote_selection(probabilities:list):
     count_0 = np.count_nonzero(idxs == 0)
     # count_1 = np.count_nonzero(idxs == 1)
     count_2 = np.count_nonzero(idxs == 2)
-    if count_2 >= 9:
+    if count_2 >= 5:
         idx = 2
-    elif count_0 >= 2:
+    elif count_0 >= 1:
         idx = 0
     else:
         idx = 1
@@ -237,7 +237,7 @@ def outcome_vote_selection(probabilities:list):
     # Selection
     count_0 = np.count_nonzero(idxs == 0)
     # count_1 = np.count_nonzero(idxs == 1)
-    if count_0 >= 3:
+    if count_0 >= 2:
         idx = 0
     else:
         idx = 1
