@@ -519,11 +519,10 @@ def outcome_load_data(data_folders:list, verbose=1, imputer=None, murmur_models=
             for k in range(len(idx)):
                 murmur_labels[k,idx[k]] = 1
             # murmur_predicts.append(m_predict)
-            murmur_predicts.append(murmur_labels.flatten())
-        # murmur_predicts = np.asarray(murmur_predicts)
-        # murmur_predicts = np.concatenate(murmur_predicts, axis=1)        
-    
-    X3 = np.vstack(murmur_predicts)
+            murmur_predicts.append(murmur_labels)
+    murmur_predicts = np.asarray(murmur_predicts)    
+    murmur_predicts = np.concatenate(murmur_predicts, axis=1)
+    X3 = np.vstack(murmur_predicts)    
 
     ds_x = tf.data.Dataset.from_tensor_slices((X1,X2,X3))
     ds_y = tf.data.Dataset.from_tensor_slices(y)
