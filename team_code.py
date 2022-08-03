@@ -86,9 +86,9 @@ def train_challenge_model(data_folder, model_folder, verbose):
 
     m_model_folder = os.path.join(model_folder, 'murmur')
     o_model_folder = os.path.join(model_folder, 'outcome')
-    train_murmur(data_path=split_path, model_path=m_model_folder, verbose=verbose,nb_epochs=nb_epochs,batch_size=BATCH_SIZE,n_mels=128,pad_length=128,imputer=imputer)
+    train_murmur(data_path=split_path, model_path=m_model_folder, verbose=verbose,nb_epochs=nb_epochs,batch_size=BATCH_SIZE,n_mels=128,pad_length=128,imputer=None)
     train_outcome(data_path=split_path, model_path=o_model_folder, murmur_model_path=m_model_folder, murmur_model_type='best_model', 
-                verbose=verbose,nb_epochs=nb_epochs,batch_size=BATCH_SIZE,n_mels=128,pad_length=128,imputer=imputer)
+                verbose=verbose,nb_epochs=nb_epochs,batch_size=BATCH_SIZE,n_mels=128,pad_length=128,imputer=None)
 
     # validation_outcome(data_path=data_folder, model_path=o_model_folder, murmur_model_path=m_model_folder, murmur_model_type='best_model', 
     #              verbose=verbose,batch_size=64,n_mels=128,pad_length=128,imputer=imputer)
@@ -169,10 +169,15 @@ def run_challenge_model(model, data, recordings, verbose):
         m_probabilities = tf.nn.softmax(m_pred[0])
         m_preds.append(m_probabilities)
     m_preds = np.asarray(m_preds)
-    
-    m_pred_outcome = m_preds.reshape(1, -1)
 
-    m_pred_outcome = tf.convert_to_tensor(m_pred_outcome,dtype=tf.float32)
+    idx = np.argmax(m_preds, axis=1)
+    m_labels = np.zeros((m_preds.shape[0], m_preds.shape[1]), dtype=np.int_)
+    for k in range(len(idx)):
+        m_labels[k,idx[k]] = 1
+    
+    m_pred_outcome = m_labels.reshape(1, -1)
+    # m_pred_outcome = tf.convert_to_tensor(m_pred_outcome,dtype=tf.float32)
+    # print(m_pred_outcome)
 
     # Outcome predict
     o_preds = list()    
@@ -242,7 +247,7 @@ def outcome_vote_selection(probabilities:list):
     else:
         idx = 1
         
-    probs = np.sum(probabilities[idxs == idx], axis=0)            
+    probs = np.sum(probabilities[idxs == idx], axis=0)
     probs = tf.nn.softmax(probs)
     probs = probs.numpy()
     return idx, probs
@@ -394,14 +399,14 @@ def get_wav_data(data, recordings, padding=128, fs=4000, n_fft=1024, hop_length=
                         # record = librosa.resample(record, orig_sr=fs, target_sr=1000)
                         # record = librosa.feature.melspectrogram(y=record, sr=1000, n_fft=1024, hop_length=512, n_mels=128)
                         record = librosa.feature.melspectrogram(y=record, sr=fs, n_fft=n_fft, hop_length=hop_length, n_mels=n_mels)
-                        record = librosa.power_to_db(record, top_db=120)
+                        record = librosa.power_to_db(record)
                         record = keras.preprocessing.sequence.pad_sequences(record, maxlen=padding, truncating='post',padding="post",dtype=float)
                         recording_features.append(record)
                     r[j] = 1
     num_recording_features = len(recording_features)
     if num_recording_features < num_recording_locations:
         for i in range(num_recording_locations-num_recording_features):
-            recording_features.append(np.zeros((128, padding)))
+            recording_features.append(np.zeros((n_mels, padding)))
     return recording_features   
 
 ################################################################################
@@ -435,7 +440,7 @@ def get_data(data_folder, patient_files, verbose=1):
         
         # Extract features.
         current_recording = get_wav_data(current_patient_data, current_recordings, padding=PAD_LENGTH, n_fft=1024, hop_length=512, n_mels=128)
-        recording = current_recording
+        # recording = current_recording
         recording = np.reshape(current_recording, (1, 128, PAD_LENGTH, 5))
         recordings.append(recording)
 
@@ -505,14 +510,18 @@ def outcome_load_data(data_folders:list, verbose=1, imputer=None, murmur_models=
 
     # Get Murmur model predicted data
     murmur_predicts = list()
-    if murmur_models is not None:        
+    if murmur_models is not None:
         for m in murmur_models:
             m_predict = m.predict((X1,X2),batch_size=16)
             m_predict = tf.nn.softmax(m_predict)
-            # print(m_predict)
-            murmur_predicts.append(m_predict)
-        murmur_predicts = np.asarray(murmur_predicts)
-        murmur_predicts = np.concatenate(murmur_predicts, axis=1)        
+            idx = np.argmax(m_predict, axis=1)
+            murmur_labels = np.zeros((m_predict.shape[0], m_predict.shape[1]), dtype=np.int_)
+            for k in range(len(idx)):
+                murmur_labels[k,idx[k]] = 1
+            # murmur_predicts.append(m_predict)
+            murmur_predicts.append(murmur_labels.flatten())
+        # murmur_predicts = np.asarray(murmur_predicts)
+        # murmur_predicts = np.concatenate(murmur_predicts, axis=1)        
     
     X3 = np.vstack(murmur_predicts)
 
@@ -547,18 +556,19 @@ def train_murmur(model_path = 'resnet_mlp', data_path='split_data/', verbose = 2
         # load data
         train_ds = murmur_load_data(data_folders=training_folders,verbose=verbose, imputer=imputer)
         val_ds = murmur_load_data(data_folders=val_folders,verbose=verbose, imputer=imputer)        
-        train_ds = train_ds.batch(batch_size).prefetch(2)
-        val_ds = val_ds.batch(batch_size).prefetch(2)
+        train_ds = train_ds.batch(batch_size).prefetch(3)
+        val_ds = val_ds.batch(batch_size).prefetch(3)
 
         # Train the model.
         if verbose >= 1:
             print(f'Training murmur model {k+1}...')
         
-        t_model.fit_(model, train_ds=train_ds, val_ds=val_ds,reduce_lr_patient=10,stop_patient=24, batch_size=batch_size,nb_epochs=nb_epochs,
+        t_model.fit_(model, train_ds=train_ds, val_ds=val_ds,reduce_lr_patient=10,stop_patient=25, batch_size=batch_size,nb_epochs=nb_epochs,
                     reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='val_AUPRC', checkpoint_mode='max')
         del model
         del t_model
-        # del t_data
+        del train_ds
+        del val_ds
 
 
 def validation_outcome(model_path = 'resnet_mlp', murmur_model_path='murmur',murmur_model_type='best_model', data_path='training_data/', verbose = 2, batch_size = 64, n_mels = 128, pad_length=128, imputer=None):
@@ -633,17 +643,19 @@ def train_outcome(model_path = 'resnet_mlp', murmur_model_path='murmur',murmur_m
         # load data
         train_ds = outcome_load_data(data_folders=training_folders,verbose=verbose, imputer=imputer, murmur_models=murmur_models)
         val_ds = outcome_load_data(data_folders=val_folders,verbose=verbose, imputer=imputer, murmur_models=murmur_models)        
-        train_ds = train_ds.batch(batch_size).prefetch(2)
-        val_ds = val_ds.batch(batch_size).prefetch(2)
+        train_ds = train_ds.batch(batch_size).prefetch(3)
+        val_ds = val_ds.batch(batch_size).prefetch(3)
 
         # Train the model.
         if verbose >= 1:
             print(f'Training outcome model {k+1}...')
         
-        t_model.fit_(model, train_ds=train_ds, val_ds=val_ds,reduce_lr_patient=10,stop_patient=24, batch_size=batch_size,nb_epochs=nb_epochs,
+        t_model.fit_(model, train_ds=train_ds, val_ds=val_ds,reduce_lr_patient=10,stop_patient=25, batch_size=batch_size,nb_epochs=nb_epochs,
                     reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='val_AUPRC', checkpoint_mode='max')
         del model
         del t_model
+        del train_ds
+        del val_ds
 
 
 ################################################################################
@@ -713,9 +725,9 @@ class Team_Model:
     
     def create_resnet(self, input_shape, include_top=True, nb_classes=1, name='RESNET_C'):
         input_layer = keras.layers.Input(input_shape)
-        block_1 = RESNET_Block(self.filters, kernels=[3, 5, 3])(input_layer)
-        block_2 = RESNET_Block([i*2 for i in self.filters], kernels=[3, 5, 3])(block_1)
-        block_3 = RESNET_Block([i*2 for i in self.filters], kernels=[3, 5, 3])(block_2)
+        block_1 = RESNET_Block(self.filters, kernels=[8, 5, 3])(input_layer)
+        block_2 = RESNET_Block([i*2 for i in self.filters], kernels=[8, 5, 3])(block_1)
+        block_3 = RESNET_Block([i*2 for i in self.filters], kernels=[8, 5, 3])(block_2)
 
         output_layer = keras.layers.GlobalAveragePooling2D()(block_3)
 
