@@ -87,11 +87,8 @@ def train_challenge_model(data_folder, model_folder, verbose):
     m_model_folder = os.path.join(model_folder, 'murmur')
     o_model_folder = os.path.join(model_folder, 'outcome')
     train_murmur(data_path=split_path, model_path=m_model_folder, verbose=verbose,nb_epochs=nb_epochs,batch_size=BATCH_SIZE,n_mels=128,pad_length=128,imputer=None)
-    train_outcome(data_path=split_path, model_path=o_model_folder, murmur_model_path=m_model_folder, murmur_model_type='best_model', 
+    train_outcome(data_path=split_path, model_path=o_model_folder, murmur_model_path=m_model_folder, murmur_model_type='last_model', 
                 verbose=verbose,nb_epochs=nb_epochs,batch_size=BATCH_SIZE,n_mels=128,pad_length=128,imputer=None)
-
-    # validation_outcome(data_path=data_folder, model_path=o_model_folder, murmur_model_path=m_model_folder, murmur_model_type='best_model', 
-    #              verbose=verbose,batch_size=64,n_mels=128,pad_length=128,imputer=imputer)
 
     murmur_classifier = m_model_folder
     outcome_classifier = o_model_folder
@@ -117,7 +114,7 @@ def load_challenge_model(model_folder, verbose):
         m_model = Team_Model(model_folder=murmur_model_path, filters=MURMUR_FILTERS, verbose=verbose)
         murmur_model = m_model.create_resnet_mlp(input_shape=[(128,PAD_LENGTH,5),(26,)],nb_classes=3)
         m_model.build_model(murmur_model)
-        m_path = os.path.join(murmur_model_path, str(i+1), 'best_model')
+        m_path = os.path.join(murmur_model_path, str(i+1), 'last_model')
         murmur_model.load_weights(m_path).expect_partial()
         murmur_model.trainable = False        
         murmur_models.append(murmur_model)
@@ -128,7 +125,7 @@ def load_challenge_model(model_folder, verbose):
         o_model = Team_Model(model_folder=outcome_model_path, filters=OUTCOME_FILTERS, verbose=verbose)
         outcome_model = o_model.create_resnet_mlp_outcome(input_shape=[(128,PAD_LENGTH,5),(26,),(3*murmur_fold_qty,)],nb_classes=2)
         o_model.build_model(outcome_model)
-        o_path = os.path.join(outcome_model_path, str(i+1), 'best_model')
+        o_path = os.path.join(outcome_model_path, str(i+1), 'last_model')
         outcome_model.load_weights(o_path).expect_partial()
         outcome_model.trainable = False        
         outcome_models.append(outcome_model)
@@ -563,47 +560,11 @@ def train_murmur(model_path = 'resnet_mlp', data_path='split_data/', verbose = 2
             print(f'Training murmur model {k+1}...')
         
         t_model.fit_(model, train_ds=train_ds, val_ds=val_ds,reduce_lr_patient=10,stop_patient=25, batch_size=batch_size,nb_epochs=nb_epochs,
-                    reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='val_AUPRC', checkpoint_mode='max')
+                    reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='val_loss', checkpoint_mode='min')
         del model
         del t_model
         del train_ds
         del val_ds
-
-
-def validation_outcome(model_path = 'resnet_mlp', murmur_model_path='murmur',murmur_model_type='best_model', data_path='training_data/', verbose = 2, batch_size = 64, n_mels = 128, pad_length=128, imputer=None):
-    model_folder = os.path.join(model_path)
-    murmur_model_path =  os.path.join(murmur_model_path)
-    PAD_LENGTH = pad_length
-
-    num_folders = NUM_SPLIT_FOLD
-    dest_folder = data_path
-
-    murmur_fold_qty = NUM_SPLIT_FOLD
-    murmur_models = list()
-    for i in range(murmur_fold_qty):
-        m_model = Team_Model(model_folder=murmur_model_path, filters=MURMUR_FILTERS, verbose=verbose)
-        murmur_model = m_model.create_resnet_mlp(input_shape=[(n_mels,PAD_LENGTH,5),(26,)],nb_classes=3)
-        m_path = os.path.join(murmur_model_path, str(i+1), murmur_model_type)
-        murmur_model.load_weights(m_path).expect_partial()
-        murmur_model.trainable = False
-        murmur_models.append(murmur_model)
-
-    val_ds = outcome_load_data(data_folders=[data_path],verbose=verbose, imputer=imputer, murmur_models=murmur_models)
-    val_ds = val_ds.batch(batch_size).prefetch(2)
-
-    for k in range(num_folders):
-        model_folder_k = os.path.join(model_folder,str(k+1),'best_model')
-        
-        t_model = Team_Model(model_folder=model_folder_k, filters=OUTCOME_FILTERS, verbose=verbose)        
-        model = t_model.create_resnet_mlp_outcome(input_shape=[(n_mels,PAD_LENGTH,5),(26,),(3*num_folders,)],nb_classes=2)
-        t_model.build_model(model)
-        
-        model.load_weights(model_folder_k).expect_partial()
-        pred = model.evaluate(val_ds, batch_size=batch_size, verbose=1)
-        # print('Predict: ', pred)
-        
-        del model
-        del t_model
 
 
 def train_outcome(model_path = 'resnet_mlp', murmur_model_path='murmur',murmur_model_type='best_model', data_path='split_data/', verbose = 2, nb_epochs = 200, batch_size = 64, n_mels = 128, pad_length=128, imputer=None):
@@ -650,7 +611,7 @@ def train_outcome(model_path = 'resnet_mlp', murmur_model_path='murmur',murmur_m
             print(f'Training outcome model {k+1}...')
         
         t_model.fit_(model, train_ds=train_ds, val_ds=val_ds,reduce_lr_patient=10,stop_patient=25, batch_size=batch_size,nb_epochs=nb_epochs,
-                    reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='val_AUPRC', checkpoint_mode='max')
+                    reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='val_loss', checkpoint_mode='min')
         del model
         del t_model
         del train_ds
