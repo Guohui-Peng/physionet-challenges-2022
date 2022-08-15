@@ -17,7 +17,7 @@ import keras.api._v2.keras as keras
 import tensorflow as tf
 import keras.backend as K
 import librosa, random, shutil
-# import random
+from tensorflow.python.platform import tf_logging as logging
 
 from sklearn.impute import SimpleImputer
 # import warnings
@@ -559,8 +559,8 @@ def train_murmur(model_path = 'resnet_mlp', data_path='split_data/', verbose = 2
         if verbose >= 1:
             print(f'Training murmur model {k+1}...')
         
-        t_model.fit_(model, train_ds=train_ds, val_ds=val_ds,reduce_lr_patient=10,stop_patient=25, batch_size=batch_size,nb_epochs=nb_epochs,
-                    reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='val_loss', checkpoint_mode='min')
+        t_model.fit_(model, train_ds=train_ds, val_ds=val_ds,reduce_lr_patient=15,stop_patient=32, batch_size=batch_size,nb_epochs=nb_epochs,
+                    reduce_monitor='val_loss',stop_monitor='val_loss',checkpoint_monitor='val_AUPRC', checkpoint_mode='max')
         del model
         del t_model
         del train_ds
@@ -610,8 +610,8 @@ def train_outcome(model_path = 'resnet_mlp', murmur_model_path='murmur',murmur_m
         if verbose >= 1:
             print(f'Training outcome model {k+1}...')
         
-        t_model.fit_(model, train_ds=train_ds, val_ds=val_ds,reduce_lr_patient=10,stop_patient=25, batch_size=batch_size,nb_epochs=nb_epochs,
-                    reduce_monitor='loss',stop_monitor='loss',checkpoint_monitor='val_loss', checkpoint_mode='min')
+        t_model.fit_(model, train_ds=train_ds, val_ds=val_ds,reduce_lr_patient=15,stop_patient=32, batch_size=batch_size,nb_epochs=nb_epochs,
+                    reduce_monitor='val_loss',stop_monitor='val_loss',checkpoint_monitor='val_AUPRC', checkpoint_mode='max')
         del model
         del t_model
         del train_ds
@@ -675,6 +675,27 @@ class RESNET_Block(keras.layers.Layer):
         config.update({"kenels": self.kenels})
         return config
 
+class ReduceLRBacktrack(keras.callbacks.ReduceLROnPlateau):
+    def __init__(self, best_path, *args, **kwargs):
+        super(ReduceLRBacktrack, self).__init__(*args, **kwargs)
+        self.best_path = best_path
+
+    def on_epoch_end(self, epoch, logs=None):
+        current = logs.get(self.monitor)
+        if current is None:
+            logging.warning('Reduce LR on plateau conditioned on metric `%s` '
+                            'which is not available. Available metrics are: %s',
+                             self.monitor, ','.join(list(logs.keys())))
+        if not self.monitor_op(current, self.best): # not new best            
+            if not self.in_cooldown(): # and we're not in cooldown
+                old_lr = keras.backend.get_value(self.model.optimizer.lr)
+                if old_lr > np.float32(self.min_lr) and self.wait+1 >= self.patience: # going to reduce lr                    
+                    # load best model so far
+                    print("Backtracking to best model before reducting LR")
+                    self.model.load_weights(self.best_path)
+
+        super().on_epoch_end(epoch, logs)
+
 # ResNet with MLP
 class Team_Model:
     def __init__(self, verbose=2, filters=[64, 64, 64], model_folder='model'):
@@ -685,9 +706,9 @@ class Team_Model:
     
     def create_resnet(self, input_shape, include_top=True, nb_classes=1, name='RESNET_C'):
         input_layer = keras.layers.Input(input_shape)
-        block_1 = RESNET_Block(self.filters, kernels=[8, 5, 3])(input_layer)
-        block_2 = RESNET_Block([i*2 for i in self.filters], kernels=[8, 5, 3])(block_1)
-        block_3 = RESNET_Block([i*2 for i in self.filters], kernels=[8, 5, 3])(block_2)
+        block_1 = RESNET_Block(self.filters, kernels=[(7,1), (1, 7), (3, 3)])(input_layer)
+        block_2 = RESNET_Block([i*2 for i in self.filters], kernels=[(7,1), (1, 7), (3, 3)])(block_1)
+        block_3 = RESNET_Block([i*2 for i in self.filters], kernels=[(7,1), (1, 7), (3, 3)])(block_2)
 
         output_layer = keras.layers.GlobalAveragePooling2D()(block_3)
 
@@ -699,9 +720,9 @@ class Team_Model:
 
     def create_resnet_outcome(self, input_shape, include_top=True, nb_classes=1, name='RESNET_O'):
         input_layer = keras.layers.Input(input_shape)
-        block_1 = RESNET_Block(self.filters, kernels=[8, 5, 3])(input_layer)
-        block_2 = RESNET_Block([i*2 for i in self.filters], kernels=[8, 5, 3])(block_1)
-        block_3 = RESNET_Block([i*2 for i in self.filters], kernels=[8, 5, 3])(block_2)
+        block_1 = RESNET_Block(self.filters, kernels=[(7,1), (1, 7), (3, 3)])(input_layer)
+        block_2 = RESNET_Block([i*2 for i in self.filters], kernels=[(7,1), (1, 7), (3, 3)])(block_1)
+        block_3 = RESNET_Block([i*2 for i in self.filters], kernels=[(7,1), (1, 7), (3, 3)])(block_2)
 
         output_layer = keras.layers.GlobalAveragePooling2D()(block_3)
 
@@ -779,9 +800,10 @@ class Team_Model:
         # nb_epochs = 1500
         model_checkpoint = keras.callbacks.ModelCheckpoint(filepath=self.best_model_path, monitor=checkpoint_monitor, mode=checkpoint_mode, save_best_only=True,
             save_weights_only=True, verbose=self.verbose)
-        reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor=reduce_monitor, verbose=self.verbose>=2, patience=reduce_lr_patient, mode=reduce_mode
-            , cooldown = 2, min_lr=1e-6
-        )
+        # reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor=reduce_monitor, verbose=self.verbose>=2, patience=reduce_lr_patient, mode=reduce_mode
+        #     , cooldown = 2, min_lr=1e-6
+        # )
+        reduce_lr = ReduceLRBacktrack(best_path=self.best_model_path, monitor=reduce_monitor, verbose=self.verbose>=2, patience=reduce_lr_patient, mode=reduce_mode, min_lr=1e-6)
         early_stop = keras.callbacks.EarlyStopping(monitor=stop_monitor, mode=stop_mode, verbose=self.verbose, patience=stop_patient, restore_best_weights=True)        
         
         callbacks = [model_checkpoint, reduce_lr, early_stop]
